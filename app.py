@@ -561,9 +561,31 @@ def seite_rassen():
 
         st.caption(f"{len(treffer)} Rassen gefunden.")
 
-        for r in treffer:
-            # Englische API-Werte ins Deutsche uebersetzen.
-            d = dogapi.rasse_uebersetzen(r)
+        # Alle Treffer ins Deutsche uebersetzen und nach Namen sortieren.
+        # sorted mit key=Name sorgt fuer alphabetische Reihenfolge.
+        uebersetzt = sorted(
+            [dogapi.rasse_uebersetzen(r) for r in treffer],
+            key=lambda d: d["name"],
+        )
+
+        # Bei aktiver Suche waere eine Buchstaben-Aufteilung unnoetig (wenige
+        # Treffer), daher nur bei der vollen Liste nach Anfangsbuchstaben gruppieren.
+        if suche.strip():
+            gefiltert = uebersetzt
+        else:
+            # Vorhandene Anfangsbuchstaben sammeln (Grossbuchstabe des Namens).
+            # sorted(set(...)) gibt jede Anfangsletter genau einmal, alphabetisch.
+            buchstaben = sorted({d["name"][0].upper() for d in uebersetzt})
+            gewaehlt = st.select_slider(
+                "Anfangsbuchstabe", options=buchstaben, value=buchstaben[0]
+            )
+            # Nur die Rassen dieses Buchstabens behalten.
+            gefiltert = [d for d in uebersetzt if d["name"][0].upper() == gewaehlt]
+            st.caption(f"{len(gefiltert)} Rassen mit '{gewaehlt}'.")
+
+        # enumerate liefert einen laufenden Index i fuer eindeutige Button-Keys,
+        # auch falls die API denselben Namen doppelt liefert.
+        for i, d in enumerate(gefiltert):
             with st.expander(d["name"]):
                 spalte_bild, spalte_text = st.columns([1, 2])
                 with spalte_bild:
@@ -582,7 +604,8 @@ def seite_rassen():
                 if db.favorit_vorhanden(d["name"]):
                     st.caption("Bereits in deinen Favoriten.")
                 else:
-                    if st.button("Zu Favoriten hinzufuegen", key=f"favadd_{d['name']}"):
+                    # key mit Index i: garantiert eindeutig auch bei doppelten Namen.
+                    if st.button("Zu Favoriten hinzufuegen", key=f"favadd_{i}_{d['name']}"):
                         # Das uebersetzte dict d als Daten mitspeichern, damit der
                         # Favorit spaeter auch ohne API lesbar ist.
                         db.favorit_hinzufuegen(d["name"], "api", d)
