@@ -52,7 +52,7 @@ button[kind="secondaryFormSubmit"] {
     background-color: var(--farbe-akzent);
 }
 .stForm .stButton > button:hover {
-    background-color: #8f5f3f;
+    background-color: #3f5b8f;
 }
 
 /* Sidebar: heller Ton, abgesetzt vom Hauptbereich. */
