@@ -1,0 +1,85 @@
+/*
+  style.css - zentrale Gestaltung der Hundeapp.
+
+  Wird in app.py ueber css_laden() eingelesen und per st.markdown injiziert.
+  Farbwelt: warmes Gruen/Braun, passend zum Thema Hund und Natur.
+
+  Hinweis: Streamlit erzeugt eigene CSS-Klassen. Wir sprechen daher teils
+  ueber data-testid-Attribute an, die Streamlit stabil vergibt.
+*/
+
+/* Farb- und Abstandswerte zentral als CSS-Variablen.
+   So laesst sich das ganze Farbschema an einer Stelle aendern. */
+:root {
+    --farbe-primaer: #5b7c5a;        /* erdiges Gruen, Hauptfarbe */
+    --farbe-primaer-dunkel: #46613f; /* dunkler fuer Hover */
+    --farbe-akzent: #a9744f;         /* warmes Braun als Akzent */
+    --farbe-hintergrund: #f7f5f0;    /* heller, warmer Hintergrund */
+    --farbe-text: #2f2f2b;           /* dunkles Grau fuer Text */
+    --radius: 10px;                  /* einheitliche Ecken-Rundung */
+}
+
+/* Gesamter App-Hintergrund. */
+.stApp {
+    background-color: var(--farbe-hintergrund);
+}
+
+/* Ueberschriften in der Primaerfarbe und etwas kraeftiger. */
+h1, h2, h3 {
+    color: var(--farbe-primaer-dunkel);
+    font-weight: 700;
+}
+
+/* Buttons: gefuellt in Primaerfarbe, runde Ecken, weisser Text. */
+.stButton > button {
+    background-color: var(--farbe-primaer);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.45rem 1rem;
+    font-weight: 600;
+    transition: background-color 0.15s ease;  /* sanfter Farbwechsel bei Hover */
+}
+.stButton > button:hover {
+    background-color: var(--farbe-primaer-dunkel);
+    color: white;
+}
+
+/* Formular-Absende-Buttons im Akzent-Braun, damit sie sich abheben. */
+.stForm .stButton > button,
+button[kind="primaryFormSubmit"],
+button[kind="secondaryFormSubmit"] {
+    background-color: var(--farbe-akzent);
+}
+.stForm .stButton > button:hover {
+    background-color: #8f5f3f;
+}
+
+/* Sidebar: heller Ton, abgesetzt vom Hauptbereich. */
+[data-testid="stSidebar"] {
+    background-color: #eef1ea;
+}
+
+/* Zentrierter Hundename in der Sidebar (ersetzt den frueheren Inline-Style). */
+.hundename {
+    text-align: center;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--farbe-primaer-dunkel);
+    margin-top: 0.3rem;
+}
+
+/* Kennzahlen (st.metric) mit dezenter Karte hinterlegen. */
+[data-testid="stMetric"] {
+    background-color: white;
+    border-radius: var(--radius);
+    padding: 0.8rem;
+    border: 1px solid #e2e0d8;
+}
+
+/* Aufklappbare Bereiche (Expander) mit runden Ecken und heller Karte. */
+[data-testid="stExpander"] {
+    border-radius: var(--radius);
+    border: 1px solid #e2e0d8;
+    background-color: white;
+}

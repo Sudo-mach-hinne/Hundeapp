@@ -6,6 +6,7 @@ Start:  streamlit run app.py
 """
 
 from datetime import date
+from pathlib import Path
 
 # pandas fuer Tabellen und Diagramme, streamlit fuer die Oberflaeche.
 import pandas as pd
@@ -28,6 +29,26 @@ ATEM_SCHWELLE = 30  # Atemzuege pro Minute in Ruhe, Orientierungswert
 # Fruehestes waehlbares Geburtsdatum. date.today().year - 30 heisst: bis zu
 # 30 Jahre zurueck. Als Konstante, damit beide Datumsfelder denselben Bereich nutzen.
 GEBURT_MIN = date(date.today().year - 30, 1, 1)
+
+
+def css_laden():
+    """
+    Liest style.css ein und bindet die Regeln in die Seite ein.
+
+    Warum so: Streamlit hat keinen nativen Weg, eine CSS-Datei zu verlinken.
+    Der uebliche Ansatz ist, den Datei-Inhalt zu lesen und einmal in einem
+    <style>-Block per st.markdown einzufuegen. unsafe_allow_html=True ist dafuer
+    noetig, weil wir bewusst HTML/CSS einbetten.
+
+    try/except: Fehlt die Datei, laeuft die App trotzdem weiter (ohne Styling),
+    statt mit einem Fehler abzubrechen.
+    """
+    pfad = Path(__file__).parent / "style.css"
+    try:
+        css = pfad.read_text(encoding="utf-8")
+        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+    except FileNotFoundError:
+        pass  # ohne CSS weiterlaufen
 
 
 def datenbank_vorbereiten():
@@ -854,6 +875,7 @@ def seite_giftpflanzen():
 
 def main():
     st.set_page_config(page_title="Hundeapp", page_icon="paw", layout="wide")
+    css_laden()  # eigenes Styling aus style.css einbinden
     datenbank_vorbereiten()
 
     st.sidebar.title("Hundeapp")
@@ -876,9 +898,10 @@ def main():
                 st.image(aktiver_hund["profilbild"], width=110)
             else:
                 st.image(fotoalbum.standard_silhouette(), width=110)
-        # Name mittig und etwas groesser unter dem Bild.
+        # Name mittig unter dem Bild. Styling kommt aus der CSS-Klasse 'hundename'
+        # in style.css, statt inline hier im Code.
         st.sidebar.markdown(
-            f"<div style='text-align:center; font-weight:600;'>{aktiver_hund['name']}</div>",
+            f"<div class='hundename'>{aktiver_hund['name']}</div>",
             unsafe_allow_html=True,
         )
     else:
