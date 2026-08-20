@@ -17,6 +17,7 @@ import database as db
 import logik
 import rassen
 import dogapi  # Anbindung an The Dog API (grosser Rassenkatalog)
+import fotoalbum  # Bildverarbeitung: Verkleinern, Kreiszuschnitt, Silhouette
 from giftpflanzen_start import STARTDATEN
 from ratgeber_start import STARTARTIKEL
 
@@ -45,6 +46,23 @@ def datenbank_vorbereiten():
 # Profilverwaltung
 # ----------------------------------------------------------------------
 
+def profilbild_anzeigen(hund, breite=150):
+    """
+    Zeigt das kreisrunde Profilbild eines Hundes an.
+    Ist kein eigenes Bild gespeichert, wird die Standard-Silhouette gezeigt.
+
+    hund: dict mit Schluessel 'profilbild' (Bytes oder None)
+    breite: Anzeigebreite in Pixel
+    """
+    # Eigenes Bild vorhanden? Sonst die zur Laufzeit erzeugte Silhouette nehmen.
+    # Das gespeicherte Profilbild ist bereits kreisrund zugeschnitten (PNG mit
+    # transparenten Ecken), daher kann st.image es direkt rund darstellen.
+    if hund.get("profilbild"):
+        st.image(hund["profilbild"], width=breite)
+    else:
+        st.image(fotoalbum.standard_silhouette(), width=breite)
+
+
 def seite_profil():
     # Diese Seite dient als Muster: Formular -> Absenden pruefen -> DB -> st.rerun.
     # Das gleiche Schema wiederholt sich auf den anderen Seiten.
@@ -64,6 +82,11 @@ def seite_profil():
             rasse = st.text_input("Rasse")
         with spalte2:
             geburtsdatum = st.date_input("Geburtsdatum", value=date.today())
+            # file_uploader nimmt eine Bilddatei entgegen. Optional: wird keins
+            # hochgeladen, kommt spaeter automatisch die Silhouette zum Einsatz.
+            profil_datei = st.file_uploader(
+                "Profilbild (optional)", type=["jpg", "jpeg", "png"]
+            )
         anlegen = st.form_submit_button("Hund anlegen")  # True beim Klick
 
     if anlegen:
@@ -72,8 +95,13 @@ def seite_profil():
         if not name.strip():
             st.warning("Bitte einen Namen eingeben.")
         else:
+            # Falls ein Bild hochgeladen wurde: kreisrund zuschneiden und als
+            # Bytes speichern. Sonst None, dann greift spaeter die Silhouette.
+            profilbild = None
+            if profil_datei is not None:
+                profilbild = fotoalbum.kreis_zuschnitt(profil_datei.getvalue())
             # isoformat() macht aus dem date ein Text 'JJJJ-MM-TT' fuer die DB.
-            db.hund_hinzufuegen(name.strip(), rasse.strip(), geburtsdatum.isoformat())
+            db.hund_hinzufuegen(name.strip(), rasse.strip(), geburtsdatum.isoformat(), profilbild)
             st.success(f"{name} wurde angelegt.")
             # rerun startet das Skript neu, damit der neue Hund sofort in der Liste steht.
             st.rerun()
@@ -88,6 +116,9 @@ def seite_profil():
     for h in hunde:
         # 'ohne Rasse' als Ersatztext, falls das Feld leer ist (or greift bei "" ).
         with st.expander(f"{h['name']}  ({h['rasse'] or 'ohne Rasse'})"):
+            # Aktuelles Profilbild als runde Vorschau zeigen (oder Silhouette).
+            profilbild_anzeigen(h, breite=120)
+
             # key mit der Hund-id macht die Feld-Namen eindeutig. Ohne eindeutige
             # keys wuerde Streamlit die Felder mehrerer Hunde verwechseln.
             with st.form(f"hund_edit_{h['id']}"):
@@ -101,6 +132,14 @@ def seite_profil():
                     vorbelegung = date.today()
                 neues_datum = st.date_input("Geburtsdatum", value=vorbelegung, key=f"d{h['id']}")
 
+                # Neues Profilbild optional hochladen. Bleibt es leer, wird das
+                # bestehende Bild beim Speichern nicht angetastet.
+                neues_bild = st.file_uploader(
+                    "Profilbild aendern (optional)",
+                    type=["jpg", "jpeg", "png"],
+                    key=f"pb{h['id']}",
+                )
+
                 # Zwei Buttons im selben Formular: Speichern und Loeschen.
                 spalte1, spalte2 = st.columns(2)
                 with spalte1:
@@ -112,6 +151,10 @@ def seite_profil():
                 db.hund_aktualisieren(
                     h["id"], neuer_name.strip(), neue_rasse.strip(), neues_datum.isoformat()
                 )
+                # Nur wenn wirklich ein neues Bild hochgeladen wurde, das Bild
+                # ersetzen (kreisrund zuschneiden). Sonst bleibt das alte erhalten.
+                if neues_bild is not None:
+                    db.hund_profilbild_setzen(h["id"], fotoalbum.kreis_zuschnitt(neues_bild.getvalue()))
                 st.success("Gespeichert.")
                 st.rerun()
             if loeschen:
@@ -340,6 +383,55 @@ def seite_termine(hund_id):
             db.termin_loeschen(zu_loeschen)
             st.success("Termin geloescht.")
             st.rerun()
+
+
+def seite_fotoalbum(hund_id, hund):
+    st.header("Fotoalbum")
+    # hund wird mit uebergeben, um Name und Profilbild oben zu zeigen.
+    spalte_bild, spalte_text = st.columns([1, 4])
+    with spalte_bild:
+        profilbild_anzeigen(hund, breite=90)
+    with spalte_text:
+        st.subheader(hund["name"])
+
+    # Neues Foto hochladen.
+    with st.form("foto_neu", clear_on_submit=True):
+        datei = st.file_uploader("Foto hinzufuegen", type=["jpg", "jpeg", "png"])
+        titel = st.text_input("Titel (optional)")
+        hochladen = st.form_submit_button("Foto speichern")
+
+    if hochladen:
+        if datei is None:
+            st.warning("Bitte zuerst ein Bild auswaehlen.")
+        else:
+            # Foto verkleinern (nicht kreisrund, Album zeigt normale Bilder)
+            # und als Bytes speichern.
+            bild_bytes = fotoalbum.bild_vorbereiten(datei.getvalue())
+            if bild_bytes is None:
+                st.warning("Die Datei konnte nicht als Bild gelesen werden.")
+            else:
+                db.foto_hinzufuegen(hund_id, titel.strip(), bild_bytes)
+                st.success("Foto gespeichert.")
+                st.rerun()
+
+    fotos = db.fotos_lesen(hund_id)
+    if not fotos:
+        st.info("Noch keine Fotos. Lade oben das erste Bild hoch.")
+        return
+
+    st.subheader(f"{len(fotos)} Fotos")
+    # Galerie in drei Spalten. Modulo (i % 3) verteilt die Bilder reihum
+    # auf die drei Spalten: 0,1,2,0,1,2,...
+    spalten = st.columns(3)
+    for i, foto in enumerate(fotos):
+        with spalten[i % 3]:
+            st.image(foto["bild"], use_container_width=True)
+            if foto["titel"]:
+                st.caption(foto["titel"])
+            # Jeder Loesch-Button braucht einen eindeutigen key ueber die Foto-id.
+            if st.button("Loeschen", key=f"foto_del_{foto['id']}"):
+                db.foto_loeschen(foto["id"])
+                st.rerun()
 
 
 # ----------------------------------------------------------------------
@@ -683,6 +775,22 @@ def main():
         namen = {f"{h['name']} ({h['rasse'] or 'ohne Rasse'})": h["id"] for h in hunde}
         auswahl = st.sidebar.selectbox("Aktiver Hund", list(namen.keys()))
         aktive_hund_id = namen[auswahl]
+
+        # Profilbild und Name des aktiven Hundes oben in der Sidebar anzeigen.
+        # Den passenden Hund aus der Liste holen und Bild (oder Silhouette) zeigen.
+        aktiver_hund = next(h for h in hunde if h["id"] == aktive_hund_id)
+        # Zentriert ueber drei Spalten: schmale Raender, Bild in der Mitte.
+        _, mitte, _ = st.sidebar.columns([1, 2, 1])
+        with mitte:
+            if aktiver_hund.get("profilbild"):
+                st.image(aktiver_hund["profilbild"], width=110)
+            else:
+                st.image(fotoalbum.standard_silhouette(), width=110)
+        # Name mittig und etwas groesser unter dem Bild.
+        st.sidebar.markdown(
+            f"<div style='text-align:center; font-weight:600;'>{aktiver_hund['name']}</div>",
+            unsafe_allow_html=True,
+        )
     else:
         aktive_hund_id = None
         st.sidebar.info("Noch kein Hund angelegt.")
@@ -695,6 +803,7 @@ def main():
             "Gewichtsverlauf",
             "Atemfrequenz",
             "Termine",
+            "Fotoalbum",
             "Rassen",
             "Rassenempfehlung",
             "Ratgeber",
@@ -737,6 +846,11 @@ def main():
         seite_atem(aktive_hund_id)
     elif seite == "Termine":
         seite_termine(aktive_hund_id)
+    elif seite == "Fotoalbum":
+        # Das Album braucht auch das Hund-dict (Name, Profilbild), daher den
+        # passenden Hund aus der Liste heraussuchen.
+        aktiver_hund = next(h for h in hunde if h["id"] == aktive_hund_id)
+        seite_fotoalbum(aktive_hund_id, aktiver_hund)
 
 
 if __name__ == "__main__":

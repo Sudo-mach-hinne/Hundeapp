@@ -47,7 +47,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             rasse TEXT,
-            geburtsdatum TEXT
+            geburtsdatum TEXT,
+            profilbild BLOB
         )
     """)
 
@@ -120,6 +121,18 @@ def init_db():
         )
     """)
 
+    # Fotoalbum: mehrere Bilder je Hund. bild als BLOB (Bytes), titel optional.
+    # Cascade wie bei den anderen Tabellen: Hund weg -> seine Fotos weg.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS foto (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hund_id INTEGER NOT NULL,
+            titel TEXT,
+            bild BLOB NOT NULL,
+            FOREIGN KEY (hund_id) REFERENCES hund (id) ON DELETE CASCADE
+        )
+    """)
+
     con.commit()  # Alle CREATE-Anweisungen gemeinsam speichern
     con.close()
 
@@ -128,13 +141,14 @@ def init_db():
 # Hund (Profilverwaltung)
 # ----------------------------------------------------------------------
 
-def hund_hinzufuegen(name, rasse, geburtsdatum):
+def hund_hinzufuegen(name, rasse, geburtsdatum, profilbild=None):
     con = verbindung()
     # Fragezeichen sind Platzhalter (Prepared Statement). Werte kommen getrennt
     # als Tupel. Das schuetzt vor SQL-Injection und ist Pflicht bei Nutzereingaben.
+    # profilbild ist optional (Default None): so bleibt der Aufruf ohne Bild moeglich.
     cur = con.execute(
-        "INSERT INTO hund (name, rasse, geburtsdatum) VALUES (?, ?, ?)",
-        (name, rasse, geburtsdatum),
+        "INSERT INTO hund (name, rasse, geburtsdatum, profilbild) VALUES (?, ?, ?, ?)",
+        (name, rasse, geburtsdatum, profilbild),
     )
     con.commit()
     # lastrowid: die automatisch vergebene id des gerade eingefuegten Hundes.
@@ -147,8 +161,9 @@ def hund_hinzufuegen(name, rasse, geburtsdatum):
 def hunde_lesen():
     con = verbindung()
     # fetchall() holt alle Treffer. ORDER BY name sortiert alphabetisch.
+    # profilbild kommt als Bytes (oder None) mit, fuer die Kreis-Anzeige.
     zeilen = con.execute(
-        "SELECT id, name, rasse, geburtsdatum FROM hund ORDER BY name ASC"
+        "SELECT id, name, rasse, geburtsdatum, profilbild FROM hund ORDER BY name ASC"
     ).fetchall()
     con.close()
     # sqlite3.Row-Objekte in echte dicts wandeln, damit der Rest der App
@@ -174,6 +189,22 @@ def hund_loeschen(hund_id):
     # DELETE ... WHERE id = ?: entfernt nur diesen Hund. Die Cascade-Regel aus
     # init_db() raeumt seine Buchungen/Gewichte/Termine/Atemwerte automatisch mit weg.
     con.execute("DELETE FROM hund WHERE id = ?", (hund_id,))
+    con.commit()
+    con.close()
+
+
+def hund_profilbild_setzen(hund_id, profilbild):
+    """
+    Aktualisiert nur das Profilbild eines Hundes.
+    Getrennt von hund_aktualisieren, damit man Name/Rasse aendern kann,
+    ohne das Bild anzufassen, und umgekehrt.
+    profilbild: Bytes (Bild) oder None (Bild entfernen).
+    """
+    con = verbindung()
+    con.execute(
+        "UPDATE hund SET profilbild = ? WHERE id = ?",
+        (profilbild, hund_id),
+    )
     con.commit()
     con.close()
 
@@ -421,3 +452,40 @@ def ratgeber_anzahl():
     anzahl = con.execute("SELECT COUNT(*) FROM ratgeber").fetchone()[0]
     con.close()
     return anzahl
+
+
+# ----------------------------------------------------------------------
+# Fotoalbum (mehrere Bilder je Hund)
+# ----------------------------------------------------------------------
+
+def foto_hinzufuegen(hund_id, titel, bild):
+    """Speichert ein Albumbild (Bytes) zu einem Hund."""
+    con = verbindung()
+    con.execute(
+        "INSERT INTO foto (hund_id, titel, bild) VALUES (?, ?, ?)",
+        (hund_id, titel, bild),
+    )
+    con.commit()
+    con.close()
+
+
+def fotos_lesen(hund_id):
+    """
+    Liest alle Albumbilder eines Hundes.
+    Neueste zuerst (ORDER BY id DESC), damit frisch hochgeladene oben stehen.
+    """
+    con = verbindung()
+    zeilen = con.execute(
+        "SELECT id, titel, bild FROM foto WHERE hund_id = ? ORDER BY id DESC",
+        (hund_id,),
+    ).fetchall()
+    con.close()
+    return [dict(z) for z in zeilen]
+
+
+def foto_loeschen(foto_id):
+    """Loescht ein einzelnes Albumbild."""
+    con = verbindung()
+    con.execute("DELETE FROM foto WHERE id = ?", (foto_id,))
+    con.commit()
+    con.close()
