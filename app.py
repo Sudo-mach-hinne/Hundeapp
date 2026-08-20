@@ -16,6 +16,7 @@ import streamlit as st
 import database as db
 import logik
 import rassen
+import dogapi  # Anbindung an The Dog API (grosser Rassenkatalog)
 from giftpflanzen_start import STARTDATEN
 from ratgeber_start import STARTARTIKEL
 
@@ -347,32 +348,86 @@ def seite_termine(hund_id):
 
 def seite_rassen():
     st.header("Rassen")
-    st.caption("Bilder stammen aus der Wikipedia und werden bei Bedarf geladen.")
 
-    namen = [r["name"] for r in rassen.RASSEN]
-    auswahl = st.selectbox("Rasse waehlen", namen)
-    rasse = rassen.rasse_nach_name(auswahl)
+    # Zwei Tabs: links die selbst gepflegten deutschen Rassen mit voller Tiefe,
+    # rechts der grosse Katalog aus The Dog API. Tabs trennen beide Bereiche
+    # optisch, ohne die Seite zu ueberladen.
+    tab_gepflegt, tab_api = st.tabs(["Meine Rassen", "Alle Rassen (API)"])
 
-    # columns([1, 2]): Bild schmaler, Textspalte doppelt so breit.
-    spalte_bild, spalte_text = st.columns([1, 2])
-    with spalte_bild:
-        # Bild live aus Wikipedia holen. Gibt None zurueck, wenn offline oder
-        # kein Artikelbild vorhanden, dann statt Absturz ein Hinweis.
-        bild = rassen.bild_url_laden(rasse["wiki_titel"])
-        if bild:
-            st.image(bild, use_container_width=True)
+    # ----- Tab 1: eigene, ausfuehrlich gepflegte Rassen (deutsch) -----
+    with tab_gepflegt:
+        st.caption("Bilder stammen aus der Wikipedia und werden bei Bedarf geladen.")
+
+        namen = [r["name"] for r in rassen.RASSEN]
+        auswahl = st.selectbox("Rasse waehlen", namen)
+        rasse = rassen.rasse_nach_name(auswahl)
+
+        # columns([1, 2]): Bild schmaler, Textspalte doppelt so breit.
+        spalte_bild, spalte_text = st.columns([1, 2])
+        with spalte_bild:
+            # Bild live aus Wikipedia holen. Gibt None zurueck, wenn offline oder
+            # kein Artikelbild vorhanden, dann statt Absturz ein Hinweis.
+            bild = rassen.bild_url_laden(rasse["wiki_titel"])
+            if bild:
+                st.image(bild, use_container_width=True)
+            else:
+                st.info("Kein Bild verfuegbar (offline oder kein Artikelbild).")
+        with spalte_text:
+            st.subheader(rasse["name"])
+            st.write(rasse["beschreibung"])
+            st.write(f"**Gewicht:** {rasse['gewicht']}")
+            st.write(f"**Groesse:** {rasse['groesse']}")
+            st.write(f"**Geeignet fuer:** {rasse['geeignet_fuer']}")
+            st.write(f"**Bewegungsanspruch:** {rasse['bewegung']}")
+
+        st.subheader("Geschichtliches")
+        st.write(rasse["geschichte"])
+
+    # ----- Tab 2: grosser Katalog aus The Dog API (englisch) -----
+    with tab_api:
+        st.caption("Daten von The Dog API. Englischsprachig, mehrere Hundert Rassen.")
+
+        # Ohne hinterlegten API-Key kann nichts geladen werden: freundlich hinweisen.
+        if not dogapi.ist_konfiguriert():
+            st.warning(
+                "Kein API-Key hinterlegt. Trage deinen kostenlosen Key aus "
+                "thedogapi.com in die Datei .streamlit/secrets.toml ein."
+            )
+            return
+
+        # Suchfeld. Leer = alle Rassen anzeigen, sonst gefiltert.
+        suche = st.text_input("Rasse suchen (englischer Name, z. B. 'terrier')")
+
+        # Je nach Eingabe entweder suchen oder die komplette Liste holen.
+        if suche.strip():
+            treffer = dogapi.rassen_suchen(suche)
         else:
-            st.info("Kein Bild verfuegbar (offline oder kein Artikelbild).")
-    with spalte_text:
-        st.subheader(rasse["name"])
-        st.write(rasse["beschreibung"])
-        st.write(f"**Gewicht:** {rasse['gewicht']}")
-        st.write(f"**Groesse:** {rasse['groesse']}")
-        st.write(f"**Geeignet fuer:** {rasse['geeignet_fuer']}")
-        st.write(f"**Bewegungsanspruch:** {rasse['bewegung']}")
+            treffer = dogapi.alle_rassen()
 
-    st.subheader("Geschichtliches")
-    st.write(rasse["geschichte"])
+        if not treffer:
+            st.info("Keine Rassen gefunden oder API nicht erreichbar.")
+            return
+
+        st.caption(f"{len(treffer)} Rassen gefunden.")
+
+        # Jede Rasse als aufklappbaren Eintrag. rasse_uebersetzen wandelt die
+        # englischen API-Werte in deutsche um (soweit in den Tabellen hinterlegt).
+        for r in treffer:
+            d = dogapi.rasse_uebersetzen(r)
+            with st.expander(d["name"]):
+                spalte_bild, spalte_text = st.columns([1, 2])
+                with spalte_bild:
+                    if d["bild"]:
+                        st.image(d["bild"], use_container_width=True)
+                with spalte_text:
+                    # Werte kommen aus dem uebersetzten dict, Beschriftungen deutsch.
+                    st.write(f"**Rassegruppe:** {d['gruppe']}")
+                    st.write(f"**Herkunft:** {d['herkunft']}")
+                    st.write(f"**Gewicht (kg):** {d['gewicht']}")
+                    st.write(f"**Groesse (cm):** {d['groesse']}")
+                    st.write(f"**Lebenserwartung:** {d['lebenserwartung']}")
+                    st.write(f"**Temperament:** {d['temperament']}")
+                    st.write(f"**Gezuechtet fuer:** {d['zweck']}")
 
 
 def seite_empfehlung():
@@ -542,18 +597,19 @@ def seite_futterrechner():
 
     # Zuordnung Futterart -> Lebensphase -> Prozentsatz. Verschachteltes Dictionary,
     # weil der Prozentwert von BEIDEN Angaben abhaengt.
-    # Nassfutter: ca. 2 bis 4 Prozent, Trockenfutter: ca. 1 bis 2 Prozent des Gewichts.
+    # Bewusst konservativ angesetzt: gaengige Faustformeln liegen oft zu hoch und
+    # foerdern Uebergewicht. Werte eher am unteren Rand, Menge nach Figur anpassen.
     prozent_tabelle = {
         "Nassfutter": {
-            "ruhig / Senior": 2.0,
-            "normal aktiv": 2.5,
-            "sehr aktiv": 3.0,
-            "Welpe": 4.0,
+            "ruhig / Senior": 1.8,
+            "normal aktiv": 2.2,
+            "sehr aktiv": 2.8,
+            "Welpe": 4.0,      # Welpen brauchen wirklich viel, daher hoch belassen
         },
         "Trockenfutter": {
-            "ruhig / Senior": 1.0,
-            "normal aktiv": 1.5,
-            "sehr aktiv": 2.0,
+            "ruhig / Senior": 0.8,
+            "normal aktiv": 1.2,
+            "sehr aktiv": 1.6,
             "Welpe": 2.5,
         },
     }
@@ -576,6 +632,12 @@ def seite_futterrechner():
 
     # Futterart mit ausgeben, damit klar ist, worauf sich die Menge bezieht.
     st.caption(f"{futterart}: berechnet mit {prozent} Prozent des Koerpergewichts pro Tag.")
+    # Ehrlicher Hinweis: der individuelle Bedarf schwankt stark. Lieber knapp
+    # ansetzen und an der Figur des Hundes ausrichten als pauschal fuettern.
+    st.info(
+        "Startwert, kein Festwert. Menge nach Figur anpassen: Rippen fuehlbar, "
+        "Taille sichtbar. Nimmt der Hund zu, reduzieren, im Zweifel Tierarzt fragen."
+    )
 
 
 def seite_giftpflanzen():
