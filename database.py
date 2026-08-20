@@ -4,18 +4,32 @@ Kapselt alle SQLite-Zugriffe. Der Rest der App kennt kein SQL.
 
 Alle Bewegungsdaten (Buchung, Gewicht, Atemfrequenz, Termin) sind ueber
 die Spalte hund_id einem Hund zugeordnet (Fremdschluessel auf hund.id).
+
+Wiederkehrendes Muster in fast jeder Funktion:
+    con = verbindung()      # Verbindung oeffnen
+    con.execute(sql, werte) # SQL mit Platzhaltern ausfuehren
+    con.commit()            # Aenderung dauerhaft speichern (nur bei Schreibzugriff)
+    con.close()             # Verbindung schliessen, Ressourcen freigeben
+Lesende Funktionen nutzen fetchall()/fetchone() statt commit().
 """
 
 import sqlite3
 from pathlib import Path
 
+# Datenbankdatei liegt im selben Ordner wie diese Datei.
+# __file__ ist der Pfad zu database.py, .parent der Ordner darum.
+# So findet die App die DB unabhaengig davon, aus welchem Verzeichnis sie startet.
 DB_PFAD = Path(__file__).parent / "hundeapp.db"
 
 
 def verbindung():
     """Baut eine Verbindung auf und liefert Zeilen als dict-artige Objekte."""
     con = sqlite3.connect(DB_PFAD)
+    # row_factory = sqlite3.Row: Ergebniszeilen sind dann per Spaltenname
+    # ansprechbar (zeile["name"]) statt nur per Index (zeile[0]). Lesbarer und robuster.
     con.row_factory = sqlite3.Row
+    # SQLite prueft Fremdschluessel nur, wenn dies pro Verbindung eingeschaltet ist.
+    # Ohne diese Zeile wuerde ON DELETE CASCADE nicht greifen und Daten verwaisen.
     con.execute("PRAGMA foreign_keys = ON")
     return con
 
@@ -25,6 +39,9 @@ def init_db():
     con = verbindung()
     cur = con.cursor()
 
+    # CREATE TABLE IF NOT EXISTS: legt die Tabelle nur beim ersten Mal an.
+    # Dadurch kann init_db() bei jedem Start gefahrlos aufgerufen werden.
+    # PRIMARY KEY AUTOINCREMENT vergibt fortlaufende IDs automatisch.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS hund (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +51,8 @@ def init_db():
         )
     """)
 
+    # FOREIGN KEY ... ON DELETE CASCADE: Loescht man einen Hund, entfernt die
+    # Datenbank automatisch alle seine Buchungen mit. Kein manuelles Aufraeumen noetig.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS buchung (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +65,7 @@ def init_db():
         )
     """)
 
+    # Gleiche Kopplung an den Hund wie oben, hier fuer Gewichtswerte.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS gewicht (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +99,7 @@ def init_db():
         )
     """)
 
+    # Giftpflanzen und Ratgeber haengen an keinem Hund, daher kein hund_id/Fremdschluessel.
     cur.execute("""
         CREATE TABLE IF NOT EXISTS giftpflanze (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +111,16 @@ def init_db():
         )
     """)
 
-    con.commit()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ratgeber (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kategorie TEXT NOT NULL,
+            titel TEXT NOT NULL,
+            inhalt TEXT NOT NULL
+        )
+    """)
+
+    con.commit()  # Alle CREATE-Anweisungen gemeinsam speichern
     con.close()
 
 
@@ -100,11 +130,15 @@ def init_db():
 
 def hund_hinzufuegen(name, rasse, geburtsdatum):
     con = verbindung()
+    # Fragezeichen sind Platzhalter (Prepared Statement). Werte kommen getrennt
+    # als Tupel. Das schuetzt vor SQL-Injection und ist Pflicht bei Nutzereingaben.
     cur = con.execute(
         "INSERT INTO hund (name, rasse, geburtsdatum) VALUES (?, ?, ?)",
         (name, rasse, geburtsdatum),
     )
     con.commit()
+    # lastrowid: die automatisch vergebene id des gerade eingefuegten Hundes.
+    # Wird zurueckgegeben, damit der Aufrufer den neuen Hund direkt weiterverwenden kann.
     neue_id = cur.lastrowid
     con.close()
     return neue_id
@@ -112,15 +146,20 @@ def hund_hinzufuegen(name, rasse, geburtsdatum):
 
 def hunde_lesen():
     con = verbindung()
+    # fetchall() holt alle Treffer. ORDER BY name sortiert alphabetisch.
     zeilen = con.execute(
         "SELECT id, name, rasse, geburtsdatum FROM hund ORDER BY name ASC"
     ).fetchall()
     con.close()
+    # sqlite3.Row-Objekte in echte dicts wandeln, damit der Rest der App
+    # nicht von der DB-Bibliothek abhaengt (lose Kopplung).
     return [dict(z) for z in zeilen]
 
 
 def hund_aktualisieren(hund_id, name, rasse, geburtsdatum):
     con = verbindung()
+    # UPDATE ... WHERE id = ?: aendert genau den einen Datensatz mit dieser id.
+    # Ohne WHERE wuerden ALLE Zeilen ueberschrieben, daher ist die Bedingung wichtig.
     con.execute(
         "UPDATE hund SET name = ?, rasse = ?, geburtsdatum = ? WHERE id = ?",
         (name, rasse, geburtsdatum, hund_id),
@@ -132,6 +171,8 @@ def hund_aktualisieren(hund_id, name, rasse, geburtsdatum):
 def hund_loeschen(hund_id):
     """Loescht den Hund und ueber ON DELETE CASCADE alle zugehoerigen Daten."""
     con = verbindung()
+    # DELETE ... WHERE id = ?: entfernt nur diesen Hund. Die Cascade-Regel aus
+    # init_db() raeumt seine Buchungen/Gewichte/Termine/Atemwerte automatisch mit weg.
     con.execute("DELETE FROM hund WHERE id = ?", (hund_id,))
     con.commit()
     con.close()
@@ -139,6 +180,8 @@ def hund_loeschen(hund_id):
 
 # ----------------------------------------------------------------------
 # Buchungen (Kostentracker)
+# Aufbau identisch zu oben: INSERT zum Anlegen, SELECT ... WHERE hund_id zum
+# Lesen der Daten genau eines Hundes, DELETE zum Entfernen einer Buchung.
 # ----------------------------------------------------------------------
 
 def buchung_hinzufuegen(hund_id, datum, kategorie, beschreibung, betrag):
@@ -153,6 +196,8 @@ def buchung_hinzufuegen(hund_id, datum, kategorie, beschreibung, betrag):
 
 def buchungen_lesen(hund_id):
     con = verbindung()
+    # WHERE hund_id = ?: liefert nur die Buchungen des gewaehlten Hundes.
+    # ORDER BY datum DESC: neueste zuerst.
     zeilen = con.execute(
         "SELECT id, datum, kategorie, beschreibung, betrag FROM buchung "
         "WHERE hund_id = ? ORDER BY datum DESC",
@@ -170,7 +215,7 @@ def buchung_loeschen(buchung_id):
 
 
 # ----------------------------------------------------------------------
-# Gewicht
+# Gewicht (gleiches Muster wie Buchungen)
 # ----------------------------------------------------------------------
 
 def gewicht_hinzufuegen(hund_id, datum, kg):
@@ -185,6 +230,7 @@ def gewicht_hinzufuegen(hund_id, datum, kg):
 
 def gewicht_lesen(hund_id):
     con = verbindung()
+    # ASC (aufsteigend), damit die Werte zeitlich richtig fuer den Trend und das Diagramm liegen.
     zeilen = con.execute(
         "SELECT id, datum, kg FROM gewicht WHERE hund_id = ? ORDER BY datum ASC",
         (hund_id,),
@@ -194,7 +240,7 @@ def gewicht_lesen(hund_id):
 
 
 # ----------------------------------------------------------------------
-# Termine
+# Termine (gleiches Muster)
 # ----------------------------------------------------------------------
 
 def termin_hinzufuegen(hund_id, datum, titel, notiz):
@@ -225,7 +271,7 @@ def termin_loeschen(termin_id):
 
 
 # ----------------------------------------------------------------------
-# Atemfrequenz
+# Atemfrequenz (gleiches Muster)
 # ----------------------------------------------------------------------
 
 def atem_hinzufuegen(hund_id, datum, zuege_pro_minute, zustand, notiz):
@@ -258,7 +304,7 @@ def atem_loeschen(atem_id):
 
 
 # ----------------------------------------------------------------------
-# Giftpflanzen
+# Giftpflanzen (ohne Hundbezug, nur lesen und zaehlen)
 # ----------------------------------------------------------------------
 
 def giftpflanze_hinzufuegen(name, kategorie, gefahr, symptome, hinweis):
@@ -274,19 +320,25 @@ def giftpflanze_hinzufuegen(name, kategorie, gefahr, symptome, hinweis):
 def giftpflanzen_suchen(suchbegriff="", kategorie=None):
     """Sucht in Name und Symptomen, optional gefiltert nach Kategorie."""
     con = verbindung()
+    # WHERE 1=1 ist ein Trick: immer wahr, damit die folgenden Filter einheitlich
+    # mit "AND ..." angehaengt werden koennen, ohne Sonderfall fuers erste Kriterium.
     sql = "SELECT id, name, kategorie, gefahr, symptome, hinweis FROM giftpflanze WHERE 1=1"
     parameter = []
 
+    # Nur filtern, wenn ein Suchbegriff eingegeben wurde.
     if suchbegriff:
         sql += " AND (name LIKE ? OR symptome LIKE ?)"
+        # LIKE mit %...% sucht Teiltreffer an beliebiger Stelle im Text.
         muster = f"%{suchbegriff}%"
-        parameter.extend([muster, muster])
+        parameter.extend([muster, muster])  # zweimal, fuer name UND symptome
 
+    # "Alle" bedeutet: nicht nach Kategorie einschraenken.
     if kategorie and kategorie != "Alle":
         sql += " AND kategorie = ?"
         parameter.append(kategorie)
 
     sql += " ORDER BY name ASC"
+    # SQL-String und Parameterliste werden zusammen ausgefuehrt (wieder als Prepared Statement).
     zeilen = con.execute(sql, parameter).fetchall()
     con.close()
     return [dict(z) for z in zeilen]
@@ -294,6 +346,78 @@ def giftpflanzen_suchen(suchbegriff="", kategorie=None):
 
 def giftpflanzen_anzahl():
     con = verbindung()
+    # COUNT(*) zaehlt die Zeilen. fetchone()[0] holt den einzelnen Zahlenwert
+    # aus der ersten (und einzigen) Ergebniszeile. Genutzt fuer die Seed-Pruefung.
     anzahl = con.execute("SELECT COUNT(*) FROM giftpflanze").fetchone()[0]
+    con.close()
+    return anzahl
+
+
+# ----------------------------------------------------------------------
+# Ratgeber (volles CRUD: anlegen, lesen, aendern, loeschen)
+# ----------------------------------------------------------------------
+
+def ratgeber_hinzufuegen(kategorie, titel, inhalt):
+    con = verbindung()
+    con.execute(
+        "INSERT INTO ratgeber (kategorie, titel, inhalt) VALUES (?, ?, ?)",
+        (kategorie, titel, inhalt),
+    )
+    con.commit()
+    con.close()
+
+
+def ratgeber_lesen(kategorie=None):
+    """Liest alle Artikel, optional gefiltert nach Kategorie."""
+    con = verbindung()
+    # Zwei Varianten: mit Kategoriefilter oder alles. Getrennt gehalten,
+    # weil die "alles"-Abfrage zusaetzlich nach Kategorie gruppiert sortiert.
+    if kategorie and kategorie != "Alle":
+        zeilen = con.execute(
+            "SELECT id, kategorie, titel, inhalt FROM ratgeber "
+            "WHERE kategorie = ? ORDER BY titel ASC",
+            (kategorie,),
+        ).fetchall()
+    else:
+        zeilen = con.execute(
+            "SELECT id, kategorie, titel, inhalt FROM ratgeber ORDER BY kategorie, titel ASC"
+        ).fetchall()
+    con.close()
+    return [dict(z) for z in zeilen]
+
+
+def ratgeber_kategorien():
+    """Liefert die vorhandenen Kategorien als sortierte Liste."""
+    con = verbindung()
+    # DISTINCT: jede Kategorie nur einmal, auch wenn mehrere Artikel sie nutzen.
+    zeilen = con.execute(
+        "SELECT DISTINCT kategorie FROM ratgeber ORDER BY kategorie ASC"
+    ).fetchall()
+    con.close()
+    # Nur den Kategorienamen je Zeile herausziehen, statt ganzer dicts.
+    return [z["kategorie"] for z in zeilen]
+
+
+def ratgeber_aktualisieren(ratgeber_id, kategorie, titel, inhalt):
+    con = verbindung()
+    con.execute(
+        "UPDATE ratgeber SET kategorie = ?, titel = ?, inhalt = ? WHERE id = ?",
+        (kategorie, titel, inhalt, ratgeber_id),
+    )
+    con.commit()
+    con.close()
+
+
+def ratgeber_loeschen(ratgeber_id):
+    con = verbindung()
+    con.execute("DELETE FROM ratgeber WHERE id = ?", (ratgeber_id,))
+    con.commit()
+    con.close()
+
+
+def ratgeber_anzahl():
+    con = verbindung()
+    # Wie bei den Giftpflanzen: dient der Pruefung, ob schon Startdaten vorhanden sind.
+    anzahl = con.execute("SELECT COUNT(*) FROM ratgeber").fetchone()[0]
     con.close()
     return anzahl

@@ -148,12 +148,47 @@ RASSEN = [
 ]
 
 
+# Bewertungsmerkmale je Rasse fuer den Empfehlungs-Fragebogen.
+# Getrennt von den Anzeigedaten gehalten, damit beides unabhaengig pflegbar ist.
+# Skalen einheitlich:
+#   erfahrung:   "anfaenger" | "fortgeschritten" | "profi"
+#   zeit:        "wenig" | "mittel" | "viel"   (taeglicher Zeitaufwand)
+#   wohnung:     True/False   (fuer Wohnungshaltung geeignet)
+#   kinder:      True/False   (gut mit Kindern)
+#   aktivitaet:  "niedrig" | "mittel" | "hoch"
+MERKMALE = {
+    "Labrador Retriever": {"erfahrung": "anfaenger", "zeit": "mittel",
+                            "wohnung": True, "kinder": True, "aktivitaet": "hoch"},
+    "Deutscher Schäferhund": {"erfahrung": "fortgeschritten", "zeit": "viel",
+                              "wohnung": False, "kinder": True, "aktivitaet": "hoch"},
+    "Border Collie": {"erfahrung": "profi", "zeit": "viel",
+                      "wohnung": False, "kinder": True, "aktivitaet": "hoch"},
+    "Dackel": {"erfahrung": "fortgeschritten", "zeit": "mittel",
+               "wohnung": True, "kinder": True, "aktivitaet": "mittel"},
+    "Golden Retriever": {"erfahrung": "anfaenger", "zeit": "mittel",
+                         "wohnung": True, "kinder": True, "aktivitaet": "hoch"},
+    "Chihuahua": {"erfahrung": "anfaenger", "zeit": "wenig",
+                  "wohnung": True, "kinder": False, "aktivitaet": "niedrig"},
+    "Beagle": {"erfahrung": "fortgeschritten", "zeit": "viel",
+               "wohnung": False, "kinder": True, "aktivitaet": "hoch"},
+    "Australian Shepherd": {"erfahrung": "profi", "zeit": "viel",
+                            "wohnung": False, "kinder": True, "aktivitaet": "hoch"},
+}
+
+
 def rasse_nach_name(name):
     """Liefert den Stammdatensatz zu einem Rassennamen oder None."""
+    # Lineare Suche durch die Liste: bei acht Rassen voellig ausreichend.
     for r in RASSEN:
         if r["name"] == name:
             return r
-    return None
+    return None  # nichts gefunden
+
+
+def merkmale_nach_name(name):
+    """Liefert die Bewertungsmerkmale zu einem Rassennamen oder None."""
+    # dict.get liefert den Eintrag oder None, ohne KeyError bei unbekanntem Namen.
+    return MERKMALE.get(name)
 
 
 def bild_url_laden(wiki_titel):
@@ -163,13 +198,22 @@ def bild_url_laden(wiki_titel):
     der Abruf fehlschlaegt (zum Beispiel ohne Internet).
     """
     basis = "https://de.wikipedia.org/api/rest_v1/page/summary/"
+    # quote() kodiert Sonderzeichen im Titel (Leerzeichen, Umlaute) URL-sicher,
+    # sonst wuerde die Adresse bei Namen wie "Deutscher Schaeferhund" brechen.
     url = basis + urllib.parse.quote(wiki_titel)
     try:
+        # Eigener User-Agent, weil Wikipedia Anfragen ohne Kennung teils ablehnt.
         anfrage = urllib.request.Request(
             url, headers={"User-Agent": "Hundeapp/1.0 (Lernprojekt)"}
         )
+        # timeout=10: nach 10 Sekunden abbrechen, damit die App bei langsamer
+        # Verbindung nicht haengt. with schliesst die Verbindung automatisch.
         with urllib.request.urlopen(anfrage, timeout=10) as antwort:
-            daten = json.load(antwort)
+            daten = json.load(antwort)  # JSON-Antwort in ein dict wandeln
+        # Verschachtelter Zugriff mit .get und Default {}: liefert None, falls der
+        # Artikel gar kein thumbnail hat, statt einen KeyError zu werfen.
         return daten.get("thumbnail", {}).get("source")
     except Exception:
+        # Jeder Fehler (kein Netz, Timeout, Artikel fehlt) fuehrt zu None.
+        # Die Oberflaeche zeigt dann einen Hinweis statt abzustuerzen.
         return None
