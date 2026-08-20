@@ -25,6 +25,9 @@ from ratgeber_start import STARTARTIKEL
 # an einer Stelle passieren und nicht im Code verstreut sind.
 KATEGORIEN = ["Futter", "Tierarzt", "Zubehoer", "Versicherung", "Sonstiges"]
 ATEM_SCHWELLE = 30  # Atemzuege pro Minute in Ruhe, Orientierungswert
+# Fruehestes waehlbares Geburtsdatum. date.today().year - 30 heisst: bis zu
+# 30 Jahre zurueck. Als Konstante, damit beide Datumsfelder denselben Bereich nutzen.
+GEBURT_MIN = date(date.today().year - 30, 1, 1)
 
 
 def datenbank_vorbereiten():
@@ -40,6 +43,12 @@ def datenbank_vorbereiten():
     if db.ratgeber_anzahl() == 0:
         for kategorie, titel, inhalt in STARTARTIKEL:
             db.ratgeber_hinzufuegen(kategorie, titel, inhalt)
+    # Beim ersten Start die 8 gepflegten Rassen als Favoriten eintragen.
+    # herkunft='gepflegt' merkt sich, dass die vollen deutschen Texte in
+    # rassen.RASSEN liegen. daten=None, weil wir die Details dort nachschlagen.
+    if db.favoriten_anzahl() == 0:
+        for r in rassen.RASSEN:
+            db.favorit_hinzufuegen(r["name"], "gepflegt", None)
 
 
 # ----------------------------------------------------------------------
@@ -81,7 +90,15 @@ def seite_profil():
             name = st.text_input("Name")
             rasse = st.text_input("Rasse")
         with spalte2:
-            geburtsdatum = st.date_input("Geburtsdatum", value=date.today())
+            # min_value/max_value erweitern den waehlbaren Bereich. Ohne diese
+            # Angaben erlaubt Streamlit nur wenige Jahre um heute. Geburtsdatum:
+            # bis zu 30 Jahre zurueck, hoechstens bis heute (nicht in die Zukunft).
+            geburtsdatum = st.date_input(
+                "Geburtsdatum",
+                value=date.today(),
+                min_value=GEBURT_MIN,
+                max_value=date.today(),
+            )
             # file_uploader nimmt eine Bilddatei entgegen. Optional: wird keins
             # hochgeladen, kommt spaeter automatisch die Silhouette zum Einsatz.
             profil_datei = st.file_uploader(
@@ -130,7 +147,13 @@ def seite_profil():
                     vorbelegung = date.fromisoformat(h["geburtsdatum"])
                 except (ValueError, TypeError):
                     vorbelegung = date.today()
-                neues_datum = st.date_input("Geburtsdatum", value=vorbelegung, key=f"d{h['id']}")
+                neues_datum = st.date_input(
+                    "Geburtsdatum",
+                    value=vorbelegung,
+                    min_value=GEBURT_MIN,
+                    max_value=date.today(),
+                    key=f"d{h['id']}",
+                )
 
                 # Neues Profilbild optional hochladen. Bleibt es leer, wird das
                 # bestehende Bild beim Speichern nicht angetastet.
@@ -438,46 +461,82 @@ def seite_fotoalbum(hund_id, hund):
 # Seiten ohne Hundbezug
 # ----------------------------------------------------------------------
 
+def _gepflegten_favorit_zeigen(name):
+    """Zeigt eine gepflegte Rasse mit ihren vollen deutschen Texten."""
+    # Details liegen in rassen.RASSEN, per Name nachschlagen.
+    rasse = rassen.rasse_nach_name(name)
+    if rasse is None:
+        st.write("Details nicht gefunden.")
+        return
+
+    spalte_bild, spalte_text = st.columns([1, 2])
+    with spalte_bild:
+        # Bild live aus Wikipedia holen (None-sicher).
+        bild = rassen.bild_url_laden(rasse["wiki_titel"])
+        if bild:
+            st.image(bild, use_container_width=True)
+        else:
+            st.info("Kein Bild verfuegbar.")
+    with spalte_text:
+        st.write(rasse["beschreibung"])
+        st.write(f"**Gewicht:** {rasse['gewicht']}")
+        st.write(f"**Groesse:** {rasse['groesse']}")
+        st.write(f"**Geeignet fuer:** {rasse['geeignet_fuer']}")
+        st.write(f"**Bewegungsanspruch:** {rasse['bewegung']}")
+    st.write(f"**Geschichte:** {rasse['geschichte']}")
+
+
+def _api_favorit_zeigen(daten):
+    """Zeigt einen API-Favoriten aus den gespeicherten JSON-Daten (offline lesbar)."""
+    if not daten:
+        st.write("Keine gespeicherten Details.")
+        return
+
+    spalte_bild, spalte_text = st.columns([1, 2])
+    with spalte_bild:
+        if daten.get("bild"):
+            st.image(daten["bild"], use_container_width=True)
+    with spalte_text:
+        st.write(f"**Rassegruppe:** {daten.get('gruppe', '-')}")
+        st.write(f"**Herkunft:** {daten.get('herkunft', '-')}")
+        st.write(f"**Gewicht (kg):** {daten.get('gewicht', '-')}")
+        st.write(f"**Groesse (cm):** {daten.get('groesse', '-')}")
+        st.write(f"**Lebenserwartung:** {daten.get('lebenserwartung', '-')}")
+        st.write(f"**Temperament:** {daten.get('temperament', '-')}")
+        st.write(f"**Gezuechtet fuer:** {daten.get('zweck', '-')}")
+
+
 def seite_rassen():
     st.header("Rassen")
 
-    # Zwei Tabs: links die selbst gepflegten deutschen Rassen mit voller Tiefe,
-    # rechts der grosse Katalog aus The Dog API. Tabs trennen beide Bereiche
-    # optisch, ohne die Seite zu ueberladen.
-    tab_gepflegt, tab_api = st.tabs(["Meine Rassen", "Alle Rassen (API)"])
+    # Zwei Tabs: links deine Favoriten, rechts der grosse API-Katalog zum
+    # Hinzufuegen neuer Favoriten.
+    tab_favoriten, tab_api = st.tabs(["Meine Rassen", "Alle Rassen (API)"])
 
-    # ----- Tab 1: eigene, ausfuehrlich gepflegte Rassen (deutsch) -----
-    with tab_gepflegt:
-        st.caption("Bilder stammen aus der Wikipedia und werden bei Bedarf geladen.")
+    # ----- Tab 1: persoenliche Favoriten -----
+    with tab_favoriten:
+        st.caption("Deine Favoriten. Jederzeit abwaehlbar, neue im Tab nebenan hinzufuegen.")
 
-        namen = [r["name"] for r in rassen.RASSEN]
-        auswahl = st.selectbox("Rasse waehlen", namen)
-        rasse = rassen.rasse_nach_name(auswahl)
+        favoriten = db.favoriten_lesen()
+        if not favoriten:
+            st.info("Noch keine Favoriten. Fuege im Tab 'Alle Rassen (API)' welche hinzu.")
+        else:
+            # Jeder Favorit als aufklappbarer Eintrag mit Entfernen-Knopf.
+            for f in favoriten:
+                with st.expander(f["name"]):
+                    # Je nach Herkunft die passende Anzeige waehlen.
+                    if f["herkunft"] == "gepflegt":
+                        _gepflegten_favorit_zeigen(f["name"])
+                    else:
+                        _api_favorit_zeigen(f["daten"])
+                    # Entfernen-Knopf, eindeutiger key ueber den Namen.
+                    if st.button("Aus Favoriten entfernen", key=f"favdel_{f['name']}"):
+                        db.favorit_entfernen(f["name"])
+                        st.rerun()
 
-        # columns([1, 2]): Bild schmaler, Textspalte doppelt so breit.
-        spalte_bild, spalte_text = st.columns([1, 2])
-        with spalte_bild:
-            # Bild live aus Wikipedia holen. Gibt None zurueck, wenn offline oder
-            # kein Artikelbild vorhanden, dann statt Absturz ein Hinweis.
-            bild = rassen.bild_url_laden(rasse["wiki_titel"])
-            if bild:
-                st.image(bild, use_container_width=True)
-            else:
-                st.info("Kein Bild verfuegbar (offline oder kein Artikelbild).")
-        with spalte_text:
-            st.subheader(rasse["name"])
-            st.write(rasse["beschreibung"])
-            st.write(f"**Gewicht:** {rasse['gewicht']}")
-            st.write(f"**Groesse:** {rasse['groesse']}")
-            st.write(f"**Geeignet fuer:** {rasse['geeignet_fuer']}")
-            st.write(f"**Bewegungsanspruch:** {rasse['bewegung']}")
-
-        st.subheader("Geschichtliches")
-        st.write(rasse["geschichte"])
-
-    # ----- Tab 2: grosser Katalog aus The Dog API (englisch) -----
+    # ----- Tab 2: grosser Katalog aus The Dog API -----
     with tab_api:
-        st.caption("Daten von The Dog API. Englischsprachig, mehrere Hundert Rassen.")
+        st.caption("Daten von The Dog API. Rassen als Favorit speicherbar.")
 
         # Ohne hinterlegten API-Key kann nichts geladen werden: freundlich hinweisen.
         if not dogapi.ist_konfiguriert():
@@ -502,9 +561,8 @@ def seite_rassen():
 
         st.caption(f"{len(treffer)} Rassen gefunden.")
 
-        # Jede Rasse als aufklappbaren Eintrag. rasse_uebersetzen wandelt die
-        # englischen API-Werte in deutsche um (soweit in den Tabellen hinterlegt).
         for r in treffer:
+            # Englische API-Werte ins Deutsche uebersetzen.
             d = dogapi.rasse_uebersetzen(r)
             with st.expander(d["name"]):
                 spalte_bild, spalte_text = st.columns([1, 2])
@@ -512,7 +570,6 @@ def seite_rassen():
                     if d["bild"]:
                         st.image(d["bild"], use_container_width=True)
                 with spalte_text:
-                    # Werte kommen aus dem uebersetzten dict, Beschriftungen deutsch.
                     st.write(f"**Rassegruppe:** {d['gruppe']}")
                     st.write(f"**Herkunft:** {d['herkunft']}")
                     st.write(f"**Gewicht (kg):** {d['gewicht']}")
@@ -520,6 +577,16 @@ def seite_rassen():
                     st.write(f"**Lebenserwartung:** {d['lebenserwartung']}")
                     st.write(f"**Temperament:** {d['temperament']}")
                     st.write(f"**Gezuechtet fuer:** {d['zweck']}")
+
+                # Ist die Rasse schon Favorit? Dann Hinweis, sonst Hinzufuegen-Knopf.
+                if db.favorit_vorhanden(d["name"]):
+                    st.caption("Bereits in deinen Favoriten.")
+                else:
+                    if st.button("Zu Favoriten hinzufuegen", key=f"favadd_{d['name']}"):
+                        # Das uebersetzte dict d als Daten mitspeichern, damit der
+                        # Favorit spaeter auch ohne API lesbar ist.
+                        db.favorit_hinzufuegen(d["name"], "api", d)
+                        st.rerun()
 
 
 def seite_empfehlung():

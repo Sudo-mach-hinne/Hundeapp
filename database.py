@@ -13,6 +13,7 @@ Wiederkehrendes Muster in fast jeder Funktion:
 Lesende Funktionen nutzen fetchall()/fetchone() statt commit().
 """
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -130,6 +131,19 @@ def init_db():
             titel TEXT,
             bild BLOB NOT NULL,
             FOREIGN KEY (hund_id) REFERENCES hund (id) ON DELETE CASCADE
+        )
+    """)
+
+    # Favoriten-Rassen. name ist eindeutig (UNIQUE), damit dieselbe Rasse nicht
+    # doppelt gespeichert wird. herkunft unterscheidet 'gepflegt' und 'api'.
+    # daten enthaelt die kompletten Anzeigefelder als JSON-Text, damit ein
+    # Favorit auch ohne API-Verbindung lesbar bleibt.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS favorit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            herkunft TEXT NOT NULL,
+            daten TEXT
         )
     """)
 
@@ -489,3 +503,76 @@ def foto_loeschen(foto_id):
     con.execute("DELETE FROM foto WHERE id = ?", (foto_id,))
     con.commit()
     con.close()
+
+
+# ----------------------------------------------------------------------
+# Favoriten-Rassen
+# ----------------------------------------------------------------------
+
+def favorit_hinzufuegen(name, herkunft, daten=None):
+    """
+    Speichert eine Rasse als Favorit.
+    name:     Rassenname (eindeutig)
+    herkunft: 'gepflegt' (eigene Rasse) oder 'api' (aus The Dog API)
+    daten:    dict mit den Anzeigefeldern, wird als JSON-Text abgelegt
+
+    INSERT OR IGNORE: Ist der Name schon Favorit (UNIQUE-Verletzung), passiert
+    nichts, statt einen Fehler zu werfen. So kann dieselbe Rasse nicht doppelt rein.
+    """
+    con = verbindung()
+    # dict in JSON-Text umwandeln. json.dumps mit ensure_ascii=False behaelt
+    # Umlaute lesbar, statt sie in \uXXXX zu kodieren.
+    daten_text = json.dumps(daten, ensure_ascii=False) if daten else None
+    con.execute(
+        "INSERT OR IGNORE INTO favorit (name, herkunft, daten) VALUES (?, ?, ?)",
+        (name, herkunft, daten_text),
+    )
+    con.commit()
+    con.close()
+
+
+def favoriten_lesen():
+    """
+    Liest alle Favoriten.
+    Rueckgabe: Liste von dicts mit name, herkunft und daten (bereits aus JSON
+    zurueck in ein dict gewandelt, oder None).
+    """
+    con = verbindung()
+    zeilen = con.execute(
+        "SELECT id, name, herkunft, daten FROM favorit ORDER BY name ASC"
+    ).fetchall()
+    con.close()
+
+    ergebnis = []
+    for z in zeilen:
+        eintrag = dict(z)
+        # JSON-Text wieder in ein dict umwandeln. Ist daten leer, None lassen.
+        eintrag["daten"] = json.loads(eintrag["daten"]) if eintrag["daten"] else None
+        ergebnis.append(eintrag)
+    return ergebnis
+
+
+def favorit_entfernen(name):
+    """Entfernt einen Favorit anhand des Namens."""
+    con = verbindung()
+    con.execute("DELETE FROM favorit WHERE name = ?", (name,))
+    con.commit()
+    con.close()
+
+
+def favorit_vorhanden(name):
+    """Prueft, ob eine Rasse bereits Favorit ist (True/False)."""
+    con = verbindung()
+    treffer = con.execute(
+        "SELECT 1 FROM favorit WHERE name = ?", (name,)
+    ).fetchone()
+    con.close()
+    # fetchone liefert eine Zeile oder None. Bool() macht daraus True/False.
+    return treffer is not None
+
+
+def favoriten_anzahl():
+    con = verbindung()
+    anzahl = con.execute("SELECT COUNT(*) FROM favorit").fetchone()[0]
+    con.close()
+    return anzahl
