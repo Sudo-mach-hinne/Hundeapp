@@ -19,6 +19,7 @@ import logik
 import rassen
 import dogapi  # Anbindung an The Dog API (grosser Rassenkatalog)
 import fotoalbum  # Bildverarbeitung: Verkleinern, Kreiszuschnitt, Silhouette
+import tierarzt  # Tierarztfinder ueber OpenStreetMap (Nominatim + Overpass)
 from giftpflanzen_start import STARTDATEN
 from ratgeber_start import STARTARTIKEL
 
@@ -843,6 +844,74 @@ def seite_futterrechner():
     )
 
 
+def seite_tierarzt():
+    st.header("Tierarztfinder")
+    st.caption(
+        "Sucht Tierarztpraxen in der Naehe ueber OpenStreetMap. "
+        "Die Daten sind gemeinschaftlich gepflegt und daher nicht immer vollstaendig."
+    )
+
+    # Zwei Wege zur Standortbestimmung ueber Radio-Auswahl. Ort-Eingabe ist der
+    # Hauptweg, Koordinaten direkt sind der Zusatz (z. B. vom Handy abgelesen).
+    weg = st.radio("Standort bestimmen ueber", ["Ort oder PLZ", "Koordinaten direkt"])
+
+    lat = lon = None  # werden je nach Weg gesetzt
+
+    if weg == "Ort oder PLZ":
+        ort = st.text_input("Ort oder Postleitzahl", placeholder="z. B. Leipzig")
+        umkreis = st.slider("Umkreis in km", min_value=1, max_value=20, value=5)
+        if st.button("Suchen"):
+            if not ort.strip():
+                st.warning("Bitte einen Ort oder eine PLZ eingeben.")
+            else:
+                # Erst Ort in Koordinaten wandeln (Geocoding).
+                koord = tierarzt.ort_zu_koordinaten(ort.strip())
+                if koord is None:
+                    st.error("Ort nicht gefunden oder keine Verbindung. Bitte pruefen.")
+                else:
+                    lat, lon = koord
+                    _tieraerzte_anzeigen(lat, lon, umkreis * 1000)
+    else:
+        # Koordinaten direkt: zwei Zahlenfelder. Vorbelegung mit Leipzig als Beispiel.
+        spalte1, spalte2 = st.columns(2)
+        with spalte1:
+            lat_ein = st.number_input("Breitengrad (lat)", value=51.3397, format="%.4f")
+        with spalte2:
+            lon_ein = st.number_input("Laengengrad (lon)", value=12.3731, format="%.4f")
+        umkreis = st.slider("Umkreis in km", min_value=1, max_value=20, value=5)
+        if st.button("Suchen"):
+            _tieraerzte_anzeigen(lat_ein, lon_ein, umkreis * 1000)
+
+
+def _tieraerzte_anzeigen(lat, lon, umkreis_m):
+    """Sucht Praxen und zeigt sie als Karte und Liste. Ausgelagert, weil beide
+    Standort-Wege dieselbe Anzeige nutzen (keine Wiederholung)."""
+    praxen = tierarzt.tieraerzte_suchen(lat, lon, umkreis_m)
+
+    if not praxen:
+        st.info("Keine Praxen gefunden oder keine Verbindung. Groesseren Umkreis versuchen.")
+        return
+
+    st.success(f"{len(praxen)} Praxen gefunden.")
+
+    # Karte: st.map erwartet ein DataFrame mit Spalten 'lat' und 'lon'.
+    # Wir sammeln die Koordinaten aller Praxen.
+    punkte = pd.DataFrame(
+        [{"lat": p["lat"], "lon": p["lon"]} for p in praxen]
+    )
+    st.map(punkte)
+
+    # Liste mit Details darunter.
+    for p in praxen:
+        with st.expander(p["name"]):
+            st.write(f"**Adresse:** {p['adresse']}")
+            if p["telefon"]:
+                st.write(f"**Telefon:** {p['telefon']}")
+            if p["webseite"]:
+                # Klickbarer Link, falls eine Webseite hinterlegt ist.
+                st.write(f"**Webseite:** {p['webseite']}")
+
+
 def seite_giftpflanzen():
     st.header("Giftpflanzen und Gefahren")
     st.caption(
@@ -921,6 +990,7 @@ def main():
             "Rassenempfehlung",
             "Ratgeber",
             "Futtermengen-Rechner",
+            "Tierarztfinder",
             "Giftpflanzen und Gefahren",
         ],
     )
@@ -940,6 +1010,9 @@ def main():
         return
     if seite == "Futtermengen-Rechner":
         seite_futterrechner()
+        return
+    if seite == "Tierarztfinder":
+        seite_tierarzt()
         return
     if seite == "Giftpflanzen und Gefahren":
         seite_giftpflanzen()
