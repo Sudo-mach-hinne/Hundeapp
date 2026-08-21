@@ -1,12 +1,14 @@
-- under construction -
+- - under construction -
 
-- Hundeapp wird noch entwickelt-
+- - Hundeapp wird noch entwickelt-
 
 
 # Vorläufige Readme Hundeapp
 
 Eine Verwaltungs- und Ratgeber-App für Hundehalter, gebaut mit Python und Streamlit.
 Entstanden im Rahmen einer Umschulung zum Fachinformatiker für Anwendungsentwicklung (FIAE).
+
+Live-Demo: https://hundeapp-aix9drcexwq9nwcuwfgnod.streamlit.app/
 
 ## Funktionen
 
