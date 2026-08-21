@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+.pytest_cache/
+hundeapp.db
+.streamlit/secrets.toml
