@@ -32,24 +32,67 @@ ATEM_SCHWELLE = 30  # Atemzuege pro Minute in Ruhe, Orientierungswert
 GEBURT_MIN = date(date.today().year - 30, 1, 1)
 
 
-def css_laden():
-    """
-    Liest style.css ein und bindet die Regeln in die Seite ein.
+# Vier Farbwelten (Begriff: Design-Token = benannte Gestaltungswerte).
+# Warum: Der Nutzer soll die Stimmung der App waehlen koennen, ohne dass wir
+# Farben im Code verstreuen. Wie: je Schema ein Satz Farbwerte; css_laden setzt
+# den passenden Satz als CSS-Variablen, die style.css dann ueberall verwendet.
+# Bewusst ohne Braun. Moderne Mischung: satte Hauptfarbe, heller Hintergrund.
+FARBSCHEMATA = {
+    "Blau": {
+        "primaer": "#3b82f6", "primaer_dunkel": "#1d4ed8",
+        "hintergrund": "#f5f8ff", "sidebar": "#e9f0fe", "text": "#1e293b",
+    },
+    "Gruen": {
+        "primaer": "#10b981", "primaer_dunkel": "#047857",
+        "hintergrund": "#f2fbf7", "sidebar": "#e4f6ee", "text": "#14322a",
+    },
+    "Rosa": {
+        "primaer": "#ec4899", "primaer_dunkel": "#be185d",
+        "hintergrund": "#fff5fa", "sidebar": "#fde9f2", "text": "#3a1f2c",
+    },
+    "Gelb": {
+        "primaer": "#f59e0b", "primaer_dunkel": "#b45309",
+        "hintergrund": "#fffdf3", "sidebar": "#fdf6e0", "text": "#3b2f14",
+    },
+}
+FARBSCHEMA_STANDARD = "Blau"
 
-    Warum so: Streamlit hat keinen nativen Weg, eine CSS-Datei zu verlinken.
-    Der uebliche Ansatz ist, den Datei-Inhalt zu lesen und einmal in einem
-    <style>-Block per st.markdown einzufuegen. unsafe_allow_html=True ist dafuer
-    noetig, weil wir bewusst HTML/CSS einbetten.
 
-    try/except: Fehlt die Datei, laeuft die App trotzdem weiter (ohne Styling),
-    statt mit einem Fehler abzubrechen.
+def css_laden(schema_name):
     """
+    Bindet das Styling ein: erst die Farbvariablen des gewaehlten Schemas,
+    dann die Layout-Regeln aus style.css.
+
+    Begriff: CSS-Variablen (Custom Properties) = benannte Werte wie --farbe-primaer,
+    die an vielen Stellen wiederverwendet werden.
+    Warum getrennt: So bleibt das Layout (style.css) unveraendert, und nur die
+    Farbwerte wechseln je nach Auswahl. Ein Schemawechsel aendert nur diesen Block.
+    Wie: Wir bauen einen :root-Block mit den Farbwerten des Schemas und haengen
+    die Datei-Regeln an. Beides zusammen geht per st.markdown in die Seite.
+    """
+    # Gewaehltes Schema holen, bei unbekanntem Namen auf den Standard zurueckfallen.
+    schema = FARBSCHEMATA.get(schema_name, FARBSCHEMATA[FARBSCHEMA_STANDARD])
+
+    # :root-Block mit den Farbwerten als CSS-Variablen zusammenbauen.
+    farben = f"""
+    :root {{
+        --farbe-primaer: {schema['primaer']};
+        --farbe-primaer-dunkel: {schema['primaer_dunkel']};
+        --farbe-hintergrund: {schema['hintergrund']};
+        --farbe-sidebar: {schema['sidebar']};
+        --farbe-text: {schema['text']};
+    }}
+    """
+
     pfad = Path(__file__).parent / "style.css"
     try:
         css = pfad.read_text(encoding="utf-8")
-        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
-        pass  # ohne CSS weiterlaufen
+        css = ""  # ohne Layout-Datei wenigstens die Farben setzen
+
+    # Farben zuerst, dann die Layout-Regeln. unsafe_allow_html=True ist noetig,
+    # weil wir bewusst einen <style>-Block einbetten.
+    st.markdown(f"<style>{farben}{css}</style>", unsafe_allow_html=True)
 
 
 def datenbank_vorbereiten():
@@ -126,7 +169,7 @@ def seite_profil():
             profil_datei = st.file_uploader(
                 "Profilbild (optional)", type=["jpg", "jpeg", "png"]
             )
-        anlegen = st.form_submit_button("Hund anlegen")  # True beim Klick
+        anlegen = st.form_submit_button("Hund anlegen", icon=":material/add:")  # True beim Klick
 
     if anlegen:
         # Validierung: leerer Name (auch nur Leerzeichen) wird abgefangen.
@@ -188,9 +231,9 @@ def seite_profil():
                 # Zwei Buttons im selben Formular: Speichern und Loeschen.
                 spalte1, spalte2 = st.columns(2)
                 with spalte1:
-                    speichern = st.form_submit_button("Aenderungen speichern")
+                    speichern = st.form_submit_button("Aenderungen speichern", icon=":material/save:")
                 with spalte2:
-                    loeschen = st.form_submit_button("Hund loeschen")
+                    loeschen = st.form_submit_button("Hund loeschen", icon=":material/delete:")
 
             if speichern:
                 db.hund_aktualisieren(
@@ -224,7 +267,7 @@ def seite_kosten(hund_id):
         with spalte2:
             betrag = st.number_input("Betrag in Euro", min_value=0.0, step=0.50)
             beschreibung = st.text_input("Beschreibung")
-        speichern = st.form_submit_button("Buchung speichern")
+        speichern = st.form_submit_button("Buchung speichern", icon=":material/save:")
 
     if speichern:
         if betrag <= 0:
@@ -273,7 +316,7 @@ def seite_kosten(hund_id):
         options=[b["id"] for b in buchungen],
         format_func=lambda i: f"ID {i}",
     )
-    if st.button("Loeschen"):
+    if st.button("Loeschen", icon=":material/delete:"):
         db.buchung_loeschen(zu_loeschen)
         st.success("Buchung geloescht.")
         st.rerun()
@@ -288,7 +331,7 @@ def seite_gewicht(hund_id):
             eingabe_datum = st.date_input("Datum", value=date.today())
         with spalte2:
             kg = st.number_input("Gewicht in kg", min_value=0.0, step=0.1)
-        speichern = st.form_submit_button("Gewicht speichern")
+        speichern = st.form_submit_button("Gewicht speichern", icon=":material/save:")
 
     if speichern:
         if kg <= 0:
@@ -333,7 +376,7 @@ def seite_atem(hund_id):
             sekunden = st.selectbox("Zeitraum (Sekunden)", [15, 30, 60], index=0)
             zustand = st.selectbox("Zustand", ["Schlaf", "Ruhe wach"])
         notiz = st.text_input("Notiz")
-        speichern = st.form_submit_button("Messung speichern")
+        speichern = st.form_submit_button("Messung speichern", icon=":material/save:")
 
     if speichern:
         if gezaehlt <= 0:
@@ -381,7 +424,7 @@ def seite_atem(hund_id):
         options=[m["id"] for m in messungen],
         format_func=lambda i: f"ID {i}",
     )
-    if st.button("Loeschen"):
+    if st.button("Loeschen", icon=":material/delete:"):
         db.atem_loeschen(zu_loeschen)
         st.success("Messung geloescht.")
         st.rerun()
@@ -394,7 +437,7 @@ def seite_termine(hund_id):
         eingabe_datum = st.date_input("Datum", value=date.today())
         titel = st.text_input("Titel", placeholder="z. B. Impfung, Tierarzt")
         notiz = st.text_input("Notiz")
-        speichern = st.form_submit_button("Termin speichern")
+        speichern = st.form_submit_button("Termin speichern", icon=":material/save:")
 
     if speichern:
         if not titel.strip():
@@ -424,7 +467,7 @@ def seite_termine(hund_id):
             options=[t["id"] for t in termine],
             format_func=lambda i: f"ID {i}",
         )
-        if st.button("Loeschen"):
+        if st.button("Loeschen", icon=":material/delete:"):
             db.termin_loeschen(zu_loeschen)
             st.success("Termin geloescht.")
             st.rerun()
@@ -443,7 +486,7 @@ def seite_fotoalbum(hund_id, hund):
     with st.form("foto_neu", clear_on_submit=True):
         datei = st.file_uploader("Foto hinzufuegen", type=["jpg", "jpeg", "png"])
         titel = st.text_input("Titel (optional)")
-        hochladen = st.form_submit_button("Foto speichern")
+        hochladen = st.form_submit_button("Foto speichern", icon=":material/photo_camera:")
 
     if hochladen:
         if datei is None:
@@ -474,7 +517,7 @@ def seite_fotoalbum(hund_id, hund):
             if foto["titel"]:
                 st.caption(foto["titel"])
             # Jeder Loesch-Button braucht einen eindeutigen key ueber die Foto-id.
-            if st.button("Loeschen", key=f"foto_del_{foto['id']}"):
+            if st.button("Loeschen", icon=":material/delete:", key=f"foto_del_{foto['id']}"):
                 db.foto_loeschen(foto["id"])
                 st.rerun()
 
@@ -552,7 +595,7 @@ def seite_rassen():
                     else:
                         _api_favorit_zeigen(f["daten"])
                     # Entfernen-Knopf, eindeutiger key ueber den Namen.
-                    if st.button("Aus Favoriten entfernen", key=f"favdel_{f['name']}"):
+                    if st.button("Aus Favoriten entfernen", icon=":material/delete:", key=f"favdel_{f['name']}"):
                         db.favorit_entfernen(f["name"])
                         st.rerun()
 
@@ -627,7 +670,7 @@ def seite_rassen():
                     st.caption("Bereits in deinen Favoriten.")
                 else:
                     # key mit Index i: garantiert eindeutig auch bei doppelten Namen.
-                    if st.button("Zu Favoriten hinzufuegen", key=f"favadd_{i}_{d['name']}"):
+                    if st.button("Zu Favoriten hinzufuegen", icon=":material/favorite:", key=f"favadd_{i}_{d['name']}"):
                         # Das uebersetzte dict d als Daten mitspeichern, damit der
                         # Favorit spaeter auch ohne API lesbar ist.
                         db.favorit_hinzufuegen(d["name"], "api", d)
@@ -669,7 +712,7 @@ def seite_empfehlung():
             # weil die Logik-Funktion boolesche Werte erwartet.
             wohnung = st.radio("Wohnsituation", ["Wohnung", "Haus mit Garten"]) == "Wohnung"
             kinder = st.radio("Kinder im Haushalt", ["Ja", "Nein"]) == "Ja"
-        auswerten = st.form_submit_button("Empfehlung anzeigen")
+        auswerten = st.form_submit_button("Empfehlung anzeigen", icon=":material/recommend:")
 
     # Ohne Klick nichts berechnen, nur das Formular anzeigen.
     if not auswerten:
@@ -733,7 +776,7 @@ def seite_ratgeber():
             neue_kat = st.text_input("Kategorie", placeholder="z. B. Erziehung")
             neuer_titel = st.text_input("Titel")
             neuer_inhalt = st.text_area("Inhalt", height=150)
-            anlegen = st.form_submit_button("Artikel anlegen")
+            anlegen = st.form_submit_button("Artikel anlegen", icon=":material/add:")
         if anlegen:
             if not (neue_kat.strip() and neuer_titel.strip() and neuer_inhalt.strip()):
                 st.warning("Bitte Kategorie, Titel und Inhalt ausfuellen.")
@@ -761,9 +804,9 @@ def seite_ratgeber():
                 inhalt = st.text_area("Inhalt", value=gewaehlt["inhalt"], height=150)
                 spalte1, spalte2 = st.columns(2)
                 with spalte1:
-                    speichern = st.form_submit_button("Speichern")
+                    speichern = st.form_submit_button("Speichern", icon=":material/save:")
                 with spalte2:
-                    loeschen = st.form_submit_button("Loeschen")
+                    loeschen = st.form_submit_button("Loeschen", icon=":material/delete:")
             if speichern:
                 db.ratgeber_aktualisieren(wahl, kat.strip(), titel.strip(), inhalt.strip())
                 st.success("Gespeichert.")
@@ -844,6 +887,21 @@ def seite_futterrechner():
     )
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def _praxen_gecacht(lat, lon, umkreis_m):
+    """
+    Zwischengespeicherte Praxensuche.
+
+    Begriff: Caching = Ergebnisse zwischenspeichern. st.cache_data merkt sich
+    das Resultat zu bestimmten Eingaben (lat, lon, umkreis).
+    Warum: Die Overpass-Suche dauert einige Sekunden. Ohne Cache wuerde jeder
+    Neu-Durchlauf der Streamlit-Seite die API erneut anfragen und lange laden.
+    Wie: Bei gleichen Argumenten liefert Streamlit das gemerkte Ergebnis sofort;
+    ttl=3600 laesst den Cache nach einer Stunde verfallen (Daten bleiben aktuell).
+    """
+    return tierarzt.tieraerzte_suchen(lat, lon, umkreis_m)
+
+
 def seite_tierarzt():
     st.header("Tierarztfinder")
     st.caption(
@@ -851,62 +909,130 @@ def seite_tierarzt():
         "Die Daten sind gemeinschaftlich gepflegt und daher nicht immer vollstaendig."
     )
 
-    # Zwei Wege zur Standortbestimmung ueber Radio-Auswahl. Ort-Eingabe ist der
-    # Hauptweg, Koordinaten direkt sind der Zusatz (z. B. vom Handy abgelesen).
-    weg = st.radio("Standort bestimmen ueber", ["Ort oder PLZ", "Koordinaten direkt"])
-
-    lat = lon = None  # werden je nach Weg gesetzt
-
-    if weg == "Ort oder PLZ":
+    # st.form buendelt Eingaben und sendet sie gemeinsam ab (Begriff: Formular).
+    # Warum: In einem Formular loest die Enter-Taste im Textfeld den Absende-Button
+    # aus. Wie: text_input und Button stehen im with-Block; Enter = Klick auf Suchen.
+    with st.form("tierarzt_form"):
         ort = st.text_input("Ort oder Postleitzahl", placeholder="z. B. Leipzig")
-        umkreis = st.slider("Umkreis in km", min_value=1, max_value=20, value=5)
-        if st.button("Suchen"):
-            if not ort.strip():
-                st.warning("Bitte einen Ort oder eine PLZ eingeben.")
+        umkreis = st.slider("Umkreis in km", min_value=1, max_value=100, value=10)
+        gesucht = st.form_submit_button("Suchen", icon=":material/search:")
+
+    if gesucht:
+        if not ort.strip():
+            st.warning("Bitte einen Ort oder eine PLZ eingeben.")
+        else:
+            # Geocoding: das Umwandeln eines Ortsnamens in Koordinaten (Begriff).
+            # Warum: Die Umkreissuche rechnet mit Zahlen, nicht mit "Querfurt" als Text.
+            # Wie: Der Ort geht an Nominatim, das lat/lon des besten Treffers zurueckgibt.
+            koord = tierarzt.ort_zu_koordinaten(ort.strip())
+            if koord is None:
+                st.error("Ort nicht gefunden oder keine Verbindung. Bitte pruefen.")
             else:
-                # Erst Ort in Koordinaten wandeln (Geocoding).
-                koord = tierarzt.ort_zu_koordinaten(ort.strip())
-                if koord is None:
-                    st.error("Ort nicht gefunden oder keine Verbindung. Bitte pruefen.")
-                else:
-                    lat, lon = koord
-                    _tieraerzte_anzeigen(lat, lon, umkreis * 1000)
-    else:
-        # Koordinaten direkt: zwei Zahlenfelder. Vorbelegung mit Leipzig als Beispiel.
-        spalte1, spalte2 = st.columns(2)
-        with spalte1:
-            lat_ein = st.number_input("Breitengrad (lat)", value=51.3397, format="%.4f")
-        with spalte2:
-            lon_ein = st.number_input("Laengengrad (lon)", value=12.3731, format="%.4f")
-        umkreis = st.slider("Umkreis in km", min_value=1, max_value=20, value=5)
-        if st.button("Suchen"):
-            _tieraerzte_anzeigen(lat_ein, lon_ein, umkreis * 1000)
+                lat, lon = koord
+                # st.spinner zeigt waehrend der Suche einen Ladehinweis (Begriff:
+                # Spinner = Wartesymbol). Warum: Die Suche dauert einige Sekunden.
+                # Wie: alles im with-Block laeuft, solange der Spinner sichtbar ist.
+                with st.spinner("Suche Praxen, das kann einen Moment dauern..."):
+                    praxen = _praxen_gecacht(lat, lon, umkreis * 1000)
+                # Ergebnis im Sitzungsspeicher ablegen (Begriff: session_state =
+                # Gedaechtnis der Sitzung ueber Neu-Durchlaeufe hinweg).
+                # Warum: Streamlit fuehrt das Skript bei jeder Interaktion neu aus;
+                # ohne Speicher waere das Ergebnis danach weg. Wie: wir merken uns
+                # die Praxen und zeigen sie unten ausserhalb des Formulars.
+                st.session_state["tierarzt_praxen"] = praxen
+
+    # Anzeige getrennt vom Formular: laeuft bei jedem Durchlauf, solange ein
+    # Ergebnis im Sitzungsspeicher liegt. So bleibt es sichtbar.
+    if "tierarzt_praxen" in st.session_state:
+        _tieraerzte_anzeigen(st.session_state["tierarzt_praxen"])
 
 
-def _tieraerzte_anzeigen(lat, lon, umkreis_m):
-    """Sucht Praxen und zeigt sie als Karte und Liste. Ausgelagert, weil beide
-    Standort-Wege dieselbe Anzeige nutzen (keine Wiederholung)."""
-    praxen = tierarzt.tieraerzte_suchen(lat, lon, umkreis_m)
-
+def _tieraerzte_anzeigen(praxen):
+    """Zeigt die gefundenen Praxen als interaktive Karte und Liste.
+    Bekommt die Praxenliste uebergeben, statt selbst zu suchen (Trennung von
+    Suchen und Anzeigen, bessere Lesbarkeit)."""
     if not praxen:
-        st.info("Keine Praxen gefunden oder keine Verbindung. Groesseren Umkreis versuchen.")
+        st.info("Keine Praxen gefunden. Groesseren Umkreis oder anderen Ort versuchen.")
         return
 
     st.success(f"{len(praxen)} Praxen gefunden.")
 
-    # Karte: st.map erwartet ein DataFrame mit Spalten 'lat' und 'lon'.
-    # Wir sammeln die Koordinaten aller Praxen.
-    punkte = pd.DataFrame(
-        [{"lat": p["lat"], "lon": p["lon"]} for p in praxen]
-    )
-    st.map(punkte)
+    # pydeck: Streamlits Bibliothek fuer interaktive Karten (Begriff: Deck.gl-Karte).
+    # Warum statt st.map: st.map kann keine Tooltips. pydeck zeigt beim Hovern
+    # ueber einen Punkt ein Infofenster. Wie: wir bauen eine Punkt-Ebene (Layer)
+    # mit allen Praxen und definieren, welche Felder der Tooltip anzeigt.
+    import pydeck as pdk
 
-    # Liste mit Details darunter.
+    # Datensatz fuer die Karte: pro Praxis Koordinaten plus die Infotexte,
+    # die im Tooltip erscheinen sollen. HTML im Tooltip erlaubt Zeilenumbrueche.
+    kartendaten = []
+    for p in praxen:
+        info = f"<b>{p['name']}</b><br/>{p['adresse']}"
+        if p["telefon"]:
+            info += f"<br/>Tel: {p['telefon']}"
+        if p["oeffnungszeiten"]:
+            info += f"<br/>Zeiten: {p['oeffnungszeiten']}"
+        kartendaten.append({
+            "lat": p["lat"],
+            "lon": p["lon"],
+            "info": info,
+        })
+
+    df = pd.DataFrame(kartendaten)
+
+    # Mittelpunkt der Karte: Durchschnitt aller Koordinaten, damit alle Punkte
+    # sichtbar sind. Wie: mean() ueber die Spalten lat/lon.
+    mitte_lat = df["lat"].mean()
+    mitte_lon = df["lon"].mean()
+
+    # ScatterplotLayer: eine Ebene aus Punkten (Begriff: Layer = Kartenschicht).
+    # get_position setzt den Ort, get_fill_color die Farbe, pickable=True macht
+    # die Punkte fuer den Tooltip anklickbar/hoverbar.
+    ebene = pdk.Layer(
+        "ScatterplotLayer",
+        data=df,
+        get_position="[lon, lat]",
+        get_fill_color=[200, 30, 0, 160],
+        get_radius=150,
+        pickable=True,
+    )
+
+    # view_state: der sichtbare Kartenausschnitt (Begriff: Kameraposition).
+    # zoom bestimmt die Vergroesserung.
+    ansicht = pdk.ViewState(latitude=mitte_lat, longitude=mitte_lon, zoom=10)
+
+    # tooltip: das Infofenster beim Hovern. {info} setzt den HTML-Text ein.
+    # Warum das Styling: ohne feste Breite laeuft die Box ueber und der Text
+    # wird abgeschnitten. Wie: max-width begrenzt die Breite, white-space:normal
+    # erlaubt Zeilenumbruch, padding schafft Abstand, border-radius rundet die Ecken.
+    tooltip_stil = {
+        "html": "{info}",
+        "style": {
+            "backgroundColor": "white",
+            "color": "#2f2f2b",
+            "fontSize": "13px",
+            "padding": "8px 10px",
+            "borderRadius": "8px",
+            "maxWidth": "260px",
+            "whiteSpace": "normal",
+            "boxShadow": "0 2px 6px rgba(0,0,0,0.25)",
+        },
+    }
+    karte = pdk.Deck(
+        layers=[ebene],
+        initial_view_state=ansicht,
+        tooltip=tooltip_stil,
+    )
+    st.pydeck_chart(karte)
+
+    # Liste mit Details darunter (auch ohne Karte lesbar).
     for p in praxen:
         with st.expander(p["name"]):
             st.write(f"**Adresse:** {p['adresse']}")
             if p["telefon"]:
                 st.write(f"**Telefon:** {p['telefon']}")
+            if p["oeffnungszeiten"]:
+                st.write(f"**Oeffnungszeiten:** {p['oeffnungszeiten']}")
             if p["webseite"]:
                 # Klickbarer Link, falls eine Webseite hinterlegt ist.
                 st.write(f"**Webseite:** {p['webseite']}")
@@ -944,10 +1070,35 @@ def seite_giftpflanzen():
 
 def main():
     st.set_page_config(page_title="Hundeapp", page_icon="paw", layout="wide")
-    css_laden()  # eigenes Styling aus style.css einbinden
+    # Erst die Datenbank vorbereiten, damit die Einstellungstabelle existiert und
+    # das gespeicherte Farbschema gelesen werden kann.
     datenbank_vorbereiten()
 
+    # Gespeichertes Farbschema laden (Standard, falls noch keins gewaehlt wurde),
+    # dann das Styling mit dieser Farbe einbinden.
+    aktuelles_schema = db.einstellung_lesen("farbschema", FARBSCHEMA_STANDARD)
+    css_laden(aktuelles_schema)
+
     st.sidebar.title("Hundeapp")
+
+    # Farbschema-Auswahl in der Sidebar. index=... stellt die zuletzt gewaehlte
+    # Farbe als Vorauswahl ein. Bei Aenderung wird sie gespeichert und die Seite
+    # neu geladen, damit die neue Farbe sofort greift.
+    schema_namen = list(FARBSCHEMATA.keys())
+    # Falls das gespeicherte Schema (z. B. altdeutsch) nicht mehr existiert,
+    # auf den Standard-Index zurueckfallen, um einen Fehler zu vermeiden.
+    try:
+        start_index = schema_namen.index(aktuelles_schema)
+    except ValueError:
+        start_index = schema_namen.index(FARBSCHEMA_STANDARD)
+    gewaehltes_schema = st.sidebar.selectbox(
+        "Farbschema", schema_namen, index=start_index
+    )
+    if gewaehltes_schema != aktuelles_schema:
+        # Neue Wahl dauerhaft speichern und neu laden, damit das CSS mit der
+        # neuen Farbe erzeugt wird (css_laden laeuft dann oben mit neuem Wert).
+        db.einstellung_setzen("farbschema", gewaehltes_schema)
+        st.rerun()
 
     hunde = db.hunde_lesen()
 

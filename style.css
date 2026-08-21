@@ -2,21 +2,18 @@
   style.css - zentrale Gestaltung der Hundeapp.
 
   Wird in app.py ueber css_laden() eingelesen und per st.markdown injiziert.
-  Farbwelt: warmes Gruen/Braun, passend zum Thema Hund und Natur.
+  Die konkreten Farbwerte (--farbe-*) werden NICHT hier gesetzt, sondern in
+  app.py je nach gewaehltem Farbschema davorgestellt. Diese Datei nutzt nur
+  die Variablen und definiert das Layout. So bleibt das Design an einer Stelle
+  und die Farbe ist frei umschaltbar.
 
   Hinweis: Streamlit erzeugt eigene CSS-Klassen. Wir sprechen daher teils
   ueber data-testid-Attribute an, die Streamlit stabil vergibt.
 */
 
-/* Farb- und Abstandswerte zentral als CSS-Variablen.
-   So laesst sich das ganze Farbschema an einer Stelle aendern. */
+/* --radius zentral: einheitliche Ecken-Rundung, modern wirkt etwas groesser. */
 :root {
-    --farbe-primaer: #5b7c5a;        /* erdiges Gruen, Hauptfarbe */
-    --farbe-primaer-dunkel: #46613f; /* dunkler fuer Hover */
-    --farbe-akzent: #a9744f;         /* warmes Braun als Akzent */
-    --farbe-hintergrund: #f7f5f0;    /* heller, warmer Hintergrund */
-    --farbe-text: #2f2f2b;           /* dunkles Grau fuer Text */
-    --radius: 10px;                  /* einheitliche Ecken-Rundung */
+    --radius: 14px;
 }
 
 /* Gesamter App-Hintergrund. */
@@ -24,43 +21,41 @@
     background-color: var(--farbe-hintergrund);
 }
 
-/* Ueberschriften in der Primaerfarbe und etwas kraeftiger. */
+/* Ueberschriften in der dunklen Primaerfarbe und kraeftig. */
 h1, h2, h3 {
     color: var(--farbe-primaer-dunkel);
     font-weight: 700;
+    letter-spacing: -0.01em;  /* enger fuer modernen Schriftlook */
 }
 
-/* Buttons: gefuellt in Primaerfarbe, runde Ecken, weisser Text. */
-.stButton > button {
+/* Buttons: gefuellt in Primaerfarbe, runde Ecken, weisser Text, leichter Schatten.
+   Der Schatten und die staerkere Rundung geben den modernen Eindruck. */
+.stButton > button,
+.stForm button[kind="primaryFormSubmit"],
+.stForm button[kind="secondaryFormSubmit"] {
     background-color: var(--farbe-primaer);
     color: white;
     border: none;
     border-radius: var(--radius);
-    padding: 0.45rem 1rem;
+    padding: 0.5rem 1.1rem;
     font-weight: 600;
-    transition: background-color 0.15s ease;  /* sanfter Farbwechsel bei Hover */
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    transition: transform 0.08s ease, background-color 0.15s ease;
 }
-.stButton > button:hover {
+.stButton > button:hover,
+.stForm button[kind="primaryFormSubmit"]:hover,
+.stForm button[kind="secondaryFormSubmit"]:hover {
     background-color: var(--farbe-primaer-dunkel);
     color: white;
+    transform: translateY(-1px);  /* Button hebt sich beim Hovern leicht an */
 }
 
-/* Formular-Absende-Buttons im Akzent-Braun, damit sie sich abheben. */
-.stForm .stButton > button,
-button[kind="primaryFormSubmit"],
-button[kind="secondaryFormSubmit"] {
-    background-color: var(--farbe-akzent);
-}
-.stForm .stButton > button:hover {
-    background-color: #3f5b8f;
-}
-
-/* Sidebar: heller Ton, abgesetzt vom Hauptbereich. */
+/* Sidebar: heller getoenter Hintergrund, abgesetzt vom Hauptbereich. */
 [data-testid="stSidebar"] {
-    background-color: #eef1ea;
+    background-color: var(--farbe-sidebar);
 }
 
-/* Zentrierter Hundename in der Sidebar (ersetzt den frueheren Inline-Style). */
+/* Zentrierter Hundename in der Sidebar. */
 .hundename {
     text-align: center;
     font-weight: 600;
@@ -69,17 +64,51 @@ button[kind="secondaryFormSubmit"] {
     margin-top: 0.3rem;
 }
 
-/* Kennzahlen (st.metric) mit dezenter Karte hinterlegen. */
+/* Kennzahlen (st.metric) als helle Karte mit Rundung und Schatten. */
 [data-testid="stMetric"] {
     background-color: white;
     border-radius: var(--radius);
     padding: 0.8rem;
-    border: 1px solid #e2e0d8;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
-/* Aufklappbare Bereiche (Expander) mit runden Ecken und heller Karte. */
+/* Aufklappbare Bereiche (Expander) als helle Karte. */
 [data-testid="stExpander"] {
     border-radius: var(--radius);
-    border: 1px solid #e2e0d8;
+    border: 1px solid rgba(0, 0, 0, 0.06);
     background-color: white;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+/*
+  Radiobuttons als Pfoten statt Kreise.
+  Begriff: Pseudo-Element ::before = ein per CSS erzeugtes Zeichen vor dem Element.
+  Warum: Streamlit zeichnet runde Radiobuttons; wir wollen eine Pfote.
+  Wie: Wir blenden den originalen runden Punkt aus und setzen stattdessen das
+  Pfoten-Emoji als Inhalt davor. Der ausgewaehlte Zustand wird kraeftiger.
+*/
+
+/* Den runden Standard-Punkt des Radios ausblenden. */
+[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
+    display: none;
+}
+
+/* Vor jedes Radio-Label eine blasse Pfote setzen (nicht gewaehlt). */
+[data-testid="stSidebar"] [role="radiogroup"] label::before {
+    content: "🐾";
+    margin-right: 0.5rem;
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
+}
+
+/* Beim gewaehlten Radio (aria-checked=true) die Pfote voll sichtbar machen. */
+[data-testid="stSidebar"] [role="radiogroup"] label[aria-checked="true"]::before {
+    opacity: 1;
+}
+
+/* Gewaehltes Label kraeftiger und in Primaerfarbe. */
+[data-testid="stSidebar"] [role="radiogroup"] label[aria-checked="true"] {
+    color: var(--farbe-primaer-dunkel);
+    font-weight: 600;
 }

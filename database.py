@@ -147,6 +147,17 @@ def init_db():
         )
     """)
 
+    # Einstellungen als Schluessel-Wert-Speicher (Begriff: Key-Value-Tabelle).
+    # Warum: Kleine App-Einstellungen wie das Farbschema sollen dauerhaft sein,
+    # brauchen aber keine eigene Tabelle je Einstellung. Wie: eine Zeile pro
+    # Einstellung, 'schluessel' ist eindeutig, 'wert' haelt den gespeicherten Wert.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS einstellung (
+            schluessel TEXT PRIMARY KEY,
+            wert TEXT NOT NULL
+        )
+    """)
+
     con.commit()  # Alle CREATE-Anweisungen gemeinsam speichern
     con.close()
 
@@ -576,3 +587,41 @@ def favoriten_anzahl():
     anzahl = con.execute("SELECT COUNT(*) FROM favorit").fetchone()[0]
     con.close()
     return anzahl
+
+
+# ----------------------------------------------------------------------
+# Einstellungen (Schluessel-Wert-Speicher)
+# ----------------------------------------------------------------------
+
+def einstellung_setzen(schluessel, wert):
+    """
+    Speichert oder aktualisiert eine Einstellung.
+
+    Begriff: UPSERT = einfuegen oder bei vorhandenem Schluessel aktualisieren.
+    Warum: Beim ersten Mal gibt es die Einstellung noch nicht (INSERT), spaeter
+    soll derselbe Schluessel ueberschrieben werden (UPDATE).
+    Wie: 'INSERT ... ON CONFLICT ... DO UPDATE' macht beides in einem Befehl.
+    """
+    con = verbindung()
+    con.execute(
+        "INSERT INTO einstellung (schluessel, wert) VALUES (?, ?) "
+        "ON CONFLICT(schluessel) DO UPDATE SET wert = excluded.wert",
+        (schluessel, wert),
+    )
+    con.commit()
+    con.close()
+
+
+def einstellung_lesen(schluessel, standard=None):
+    """
+    Liest eine Einstellung. Fehlt sie, wird 'standard' zurueckgegeben.
+    Warum der Standardwert: Beim ersten Start existiert noch keine gespeicherte
+    Wahl, dann soll ein sinnvoller Vorgabewert greifen.
+    """
+    con = verbindung()
+    zeile = con.execute(
+        "SELECT wert FROM einstellung WHERE schluessel = ?", (schluessel,)
+    ).fetchone()
+    con.close()
+    # fetchone liefert die Zeile oder None. Bei None den Standard zurueckgeben.
+    return zeile["wert"] if zeile else standard
