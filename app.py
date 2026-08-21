@@ -32,27 +32,27 @@ ATEM_SCHWELLE = 30  # Atemzuege pro Minute in Ruhe, Orientierungswert
 GEBURT_MIN = date(date.today().year - 30, 1, 1)
 
 
-# Vier Farbwelten (Begriff: Design-Token = benannte Gestaltungswerte).
-# Warum: Der Nutzer soll die Stimmung der App waehlen koennen, ohne dass wir
-# Farben im Code verstreuen. Wie: je Schema ein Satz Farbwerte; css_laden setzt
-# den passenden Satz als CSS-Variablen, die style.css dann ueberall verwendet.
-# Bewusst ohne Braun. Moderne Mischung: satte Hauptfarbe, heller Hintergrund.
+# Vier ruhige Farbwelten (Begriff: Design-Token = benannte Gestaltungswerte).
+# Warum: Der Nutzer waehlt die Stimmung, aber die App bleibt ruhig, weil pro
+# Schema nur EINE Akzentfarbe alles traegt (Buttons, gewaehlte Pfote, Hervorhebung).
+# Wie: heller, fast neutraler Hintergrund und eine dezente Sidebar sind ueberall
+# gleich ruhig; nur 'akzent' und 'akzent_dunkel' unterscheiden die Schemata.
 FARBSCHEMATA = {
     "Blau": {
-        "primaer": "#3b82f6", "primaer_dunkel": "#1d4ed8",
-        "hintergrund": "#f5f8ff", "sidebar": "#e9f0fe", "text": "#1e293b",
+        "akzent": "#4f7cac", "akzent_dunkel": "#3a5f86",
+        "hintergrund": "#fafafa", "sidebar": "#f0f2f4", "text": "#2b2b2b",
     },
     "Gruen": {
-        "primaer": "#10b981", "primaer_dunkel": "#047857",
-        "hintergrund": "#f2fbf7", "sidebar": "#e4f6ee", "text": "#14322a",
+        "akzent": "#5b8a72", "akzent_dunkel": "#456a58",
+        "hintergrund": "#fafafa", "sidebar": "#f0f3f1", "text": "#2b2b2b",
     },
     "Rosa": {
-        "primaer": "#ec4899", "primaer_dunkel": "#be185d",
-        "hintergrund": "#fff5fa", "sidebar": "#fde9f2", "text": "#3a1f2c",
+        "akzent": "#b56576", "akzent_dunkel": "#8f4d5b",
+        "hintergrund": "#fafafa", "sidebar": "#f5f0f1", "text": "#2b2b2b",
     },
     "Gelb": {
-        "primaer": "#f59e0b", "primaer_dunkel": "#b45309",
-        "hintergrund": "#fffdf3", "sidebar": "#fdf6e0", "text": "#3b2f14",
+        "akzent": "#c99a4b", "akzent_dunkel": "#a37c34",
+        "hintergrund": "#fafafa", "sidebar": "#f4f2ec", "text": "#2b2b2b",
     },
 }
 FARBSCHEMA_STANDARD = "Blau"
@@ -63,24 +63,26 @@ def css_laden(schema_name):
     Bindet das Styling ein: erst die Farbvariablen des gewaehlten Schemas,
     dann die Layout-Regeln aus style.css.
 
-    Begriff: CSS-Variablen (Custom Properties) = benannte Werte wie --farbe-primaer,
+    Begriff: CSS-Variablen (Custom Properties) = benannte Werte wie --akzent,
     die an vielen Stellen wiederverwendet werden.
     Warum getrennt: So bleibt das Layout (style.css) unveraendert, und nur die
     Farbwerte wechseln je nach Auswahl. Ein Schemawechsel aendert nur diesen Block.
-    Wie: Wir bauen einen :root-Block mit den Farbwerten des Schemas und haengen
-    die Datei-Regeln an. Beides zusammen geht per st.markdown in die Seite.
+    Wie: Wir bauen einen :root-Block mit den Farbwerten und haengen die
+    Datei-Regeln an. Beides zusammen geht per st.markdown in die Seite.
     """
     # Gewaehltes Schema holen, bei unbekanntem Namen auf den Standard zurueckfallen.
     schema = FARBSCHEMATA.get(schema_name, FARBSCHEMATA[FARBSCHEMA_STANDARD])
 
-    # :root-Block mit den Farbwerten als CSS-Variablen zusammenbauen.
+    # akzent_hell: die Akzentfarbe stark aufgehellt fuer zarte Flaechen. Wir
+    # erzeugen sie hier nicht rechnerisch, sondern nutzen die Akzentfarbe mit
+    # niedriger Deckkraft direkt im CSS (siehe style.css).
     farben = f"""
     :root {{
-        --farbe-primaer: {schema['primaer']};
-        --farbe-primaer-dunkel: {schema['primaer_dunkel']};
-        --farbe-hintergrund: {schema['hintergrund']};
-        --farbe-sidebar: {schema['sidebar']};
-        --farbe-text: {schema['text']};
+        --akzent: {schema['akzent']};
+        --akzent-dunkel: {schema['akzent_dunkel']};
+        --hintergrund: {schema['hintergrund']};
+        --sidebar: {schema['sidebar']};
+        --text: {schema['text']};
     }}
     """
 
